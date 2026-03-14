@@ -110,6 +110,7 @@ mod tests {
     #[test]
     fn worktree_path_follows_naming_convention() {
         // Test with a platform-agnostic approach
+        // agent_id should be the raw ID (e.g., "42"), not "agent-42"
         let path = worktree_path(Path::new("/repo"), "42");
 
         // Check that path contains expected components
@@ -123,10 +124,23 @@ mod tests {
     }
 
     #[test]
-    fn worktree_path_with_windows_root() {
-        let path = worktree_path(Path::new("C:\\Users\\test\\project"), "agent-1");
+    fn worktree_path_with_uuid_agent_id() {
+        // Test with UUID-style agent ID (typical production usage)
+        let path = worktree_path(
+            Path::new("C:\\Users\\test\\project"),
+            "550e8400-e29b-41d4-a716-446655440000",
+        );
         let path_str = path.to_string_lossy();
         assert!(path_str.contains(".trees"));
-        assert!(path_str.contains("agent-agent-1"));
+        assert!(path_str.contains("agent-550e8400-e29b-41d4-a716-446655440000"));
+    }
+
+    #[test]
+    fn worktree_path_adds_agent_prefix() {
+        // Verify that passing "1" results in "agent-1", not "agent-agent-1"
+        let path = worktree_path(Path::new("/repo"), "1");
+        let path_str = path.to_string_lossy();
+        assert!(path_str.contains("agent-1"));
+        assert!(!path_str.contains("agent-agent-1"), "Should not double-prefix");
     }
 }
