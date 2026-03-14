@@ -1,5 +1,6 @@
 mod commands;
 pub mod git;
+mod ipc;
 mod state;
 
 use state::AppState;
