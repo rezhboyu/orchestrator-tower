@@ -1,4 +1,5 @@
 mod commands;
+mod ipc;
 mod state;
 
 use state::AppState;

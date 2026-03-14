@@ -11,13 +11,14 @@
     "build:mac": "npm run build && pkg dist/index.js -t node22-macos-x64 -o ../src-tauri/binaries/sidecar-x86_64-apple-darwin",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "echo \"No tests yet\""
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^22.13.0",
     "@yao-pkg/pkg": "^6.0.0",
     "esbuild": "^0.25.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^3.0.0"
   }
 }
