@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+sidecar/node_modules/
+
+# Build outputs
+dist/
+sidecar/dist/
+src-tauri/target/
+
+# Sidecar binaries (generated)
+src-tauri/binaries/*.exe
+src-tauri/binaries/sidecar-*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Test coverage
+coverage/
+
+# Tauri
+src-tauri/WixTools/
+src-tauri/icons/

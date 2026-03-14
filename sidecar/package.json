@@ -1,0 +1,23 @@
+{
+  "name": "orchestrator-tower-sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --outfile=dist/index.js",
+    "build:win": "npm run build && pkg dist/index.js -t node22-win-x64 -o ../src-tauri/binaries/sidecar-x86_64-pc-windows-msvc.exe",
+    "build:linux": "npm run build && pkg dist/index.js -t node22-linux-x64 -o ../src-tauri/binaries/sidecar-x86_64-unknown-linux-gnu",
+    "build:mac": "npm run build && pkg dist/index.js -t node22-macos-x64 -o ../src-tauri/binaries/sidecar-x86_64-apple-darwin",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"No tests yet\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "@yao-pkg/pkg": "^6.0.0",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.3"
+  }
+}
