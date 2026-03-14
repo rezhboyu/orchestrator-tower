@@ -28,6 +28,8 @@ pub struct AgentState {
 }
 
 impl AgentState {
+    // TODO: This function will be used in Task 05 (Worker Agent subprocess management)
+    #[allow(dead_code)]
     pub fn new(
         id: String,
         project_id: String,
@@ -85,6 +87,8 @@ impl AppState {
         }
     }
 
+    // TODO: This function will be used in Task 03 (IPC channel) for dynamic port allocation
+    #[allow(dead_code)]
     pub fn with_ports(tower_port: u16, state_port: u16) -> Self {
         Self {
             agents: RwLock::new(HashMap::new()),

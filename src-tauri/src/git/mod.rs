@@ -209,6 +209,12 @@ pub async fn cleanup_old_refs(repo_path: &Path, retention_days: u64) -> Result<(
 /// - Snapshot ref: `refs/orchestrator/{projectId}/node-{nodeId}` → returns None (no agentId info)
 ///
 /// For snapshot refs, we need to also scan shadow branches to get agentId mapping.
+///
+/// # Limitations
+/// TODO: [CLARIFY] If projectId or agentId contains underscores (e.g., `my_project_agent_1`),
+/// parsing may be incorrect since we use `rfind('_')` to split. In practice, UUIDs are used
+/// for agentId so this is unlikely. Consider documenting that projectId/agentId should not
+/// contain underscores, or use a different separator (e.g., `::` or `/`).
 fn extract_agent_id_from_ref(refname: &str) -> Option<String> {
     // Shadow branch format: refs/heads/__orch_shadow_{projectId}_{agentId}
     const SHADOW_PREFIX: &str = "refs/heads/__orch_shadow_";
@@ -217,6 +223,7 @@ fn extract_agent_id_from_ref(refname: &str) -> Option<String> {
         let suffix = &refname[SHADOW_PREFIX.len()..];
         // suffix = "{projectId}_{agentId}"
         // Find the last underscore to split projectId and agentId
+        // TODO: This assumes neither projectId nor agentId contains underscores
         if let Some(last_underscore) = suffix.rfind('_') {
             let agent_id = &suffix[last_underscore + 1..];
             if !agent_id.is_empty() {
