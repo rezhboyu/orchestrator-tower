@@ -75,6 +75,8 @@ pub struct AppState {
     pub tower_port: u16,
     pub state_port: u16,
     pub quota: RwLock<QuotaState>,
+    /// B mode: Master Orchestrator 自動審批 HITL 請求（預設關閉）
+    pub b_mode_enabled: RwLock<bool>,
 }
 
 impl AppState {
@@ -84,6 +86,7 @@ impl AppState {
             tower_port: 3701,
             state_port: 3702,
             quota: RwLock::new(QuotaState::default()),
+            b_mode_enabled: RwLock::new(false),
         }
     }
 
@@ -95,7 +98,19 @@ impl AppState {
             tower_port,
             state_port,
             quota: RwLock::new(QuotaState::default()),
+            b_mode_enabled: RwLock::new(false),
         }
+    }
+
+    /// 取得 B mode 狀態
+    pub fn is_b_mode_enabled(&self) -> bool {
+        *self.b_mode_enabled.read().unwrap()
+    }
+
+    /// 設定 B mode 狀態
+    #[allow(dead_code)]
+    pub fn set_b_mode(&self, enabled: bool) {
+        *self.b_mode_enabled.write().unwrap() = enabled;
     }
 }
 
