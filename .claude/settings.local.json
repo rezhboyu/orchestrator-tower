@@ -40,7 +40,13 @@
       "Bash(cargo test:*)",
       "Bash(git add:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nconfig\\(all\\): 初始化 Tauri 2.0 專案骨架與 Rust AppState\n\nTask 01: 專案骨架初始化\n- 建立根目錄配置 \\(package.json, tsconfig.json, vite.config.ts\\)\n- 建立 React UI 層 \\(src/\\)\n- 建立 Rust Core 層 \\(src-tauri/\\)\n- 建立 Node.js Sidecar 層 \\(sidecar/\\) 使用 esbuild + pkg\n- 配置 Tauri 2.0 capabilities 與 externalBin\n\nTask 02: Rust AppState 與 Tauri Commands\n- 實作 AgentStatus, AgentState, QuotaState, AppState 結構體\n- 實作 7 個 Tauri commands 骨架 \\(todo!\\(\\)\\)\n- 新增 3 個單元測試全數通過\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(xcopy:*)",
+      "Bash(cmd /c \"cd C:\\\\Users\\\\featuer\\\\Desktop && xcopy /E /I orchestrator-tower orchestrator-tower-t10\")",
+      "Bash(powershell -Command:*)",
+      "Bash(cmd /c \"cd /d C:\\\\Users\\\\featuer\\\\Desktop && xcopy /E /I orchestrator-tower orchestrator-tower-t11\")",
+      "Bash(cmd /c \"dir C:\\\\Users\\\\featuer\\\\Desktop\\\\orchestrator-tower-t11\")",
+      "Bash(powershell -Command \"Test-Path ''C:\\\\Users\\\\featuer\\\\Desktop\\\\orchestrator-tower-t11''\")"
     ]
   }
 }

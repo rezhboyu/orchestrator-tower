@@ -1,8 +1,15 @@
+import { Toolbar } from './components/Toolbar';
+import { Sidebar } from './components/Sidebar';
+import { MosaicArea } from './components/MosaicArea';
+
 function App() {
   return (
-    <div className="app">
-      <h1>Orchestrator Tower</h1>
-      <p>AI Agent Management System</p>
+    <div className="h-screen flex flex-col bg-gray-900 text-white">
+      <Toolbar />
+      <div className="flex-1 flex overflow-hidden">
+        <Sidebar />
+        <MosaicArea />
+      </div>
     </div>
   );
 }

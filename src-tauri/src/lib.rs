@@ -10,6 +10,7 @@ use state::AppState;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             commands::start_agent,

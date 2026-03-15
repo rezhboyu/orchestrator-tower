@@ -304,3 +304,61 @@ agent(node): 實作 process hang 防護 SIGTERM/SIGKILL
 hitl(rust): critical 等級觸發暫停所有 Agent
 db(rust): 啟用 WAL 模式並建立 reasoning_nodes 表
 ```
+
+---
+
+## 10. 並行開發流程（避免衝突）
+
+當多個 Task 需要並行開發時，使用獨立工作目錄避免衝突。
+
+### Step 0: 建立獨立工作環境
+
+```bash
+# 1. 複製專案到獨立目錄（以 Task 07 為例）
+cd C:\Users\featuer\Desktop
+xcopy /E /I orchestrator-tower orchestrator-tower-t07
+
+# 2. 進入目錄並同步最新 main
+cd orchestrator-tower-t07
+git fetch origin
+git checkout main
+git pull origin main
+
+# 3. 建立 Task 專屬分支
+git checkout -b feature/task-07-state-mcp
+
+# 4. 安裝依賴
+npm install
+cd sidecar && npm install && cd ..
+```
+
+### 工作目錄命名規則
+
+| Task | 獨立目錄 | 分支名稱 |
+|------|---------|---------|
+| T07 | `orchestrator-tower-t07` | `feature/task-07-state-mcp` |
+| T09 | `orchestrator-tower-t09` | `feature/task-09-hitl-classifier` |
+| T10 | `orchestrator-tower-t10` | `feature/task-10-quota` |
+
+### 合併流程
+
+```bash
+# 1. 在獨立目錄完成開發並推送
+git push -u origin feature/task-07-state-mcp
+
+# 2. 建立 PR 合併至 main
+
+# 3. 主目錄拉取更新
+cd C:\Users\featuer\Desktop\orchestrator-tower
+git fetch origin
+git pull origin main
+
+# 4. 確認合併成功後刪除獨立目錄
+rmdir /s /q C:\Users\featuer\Desktop\orchestrator-tower-t07
+```
+
+### 注意事項
+
+- 每個獨立目錄都有自己的 `node_modules`，需要獨立安裝依賴
+- `.claude/plans/` 內的計劃檔案會被複製，需注意避免混淆
+- 獨立目錄的 Tauri 需要獨立的 `icons/icon.ico`，可從主目錄複製
