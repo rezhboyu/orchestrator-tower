@@ -49,10 +49,35 @@ agentManager.on('error', (agentId, err) => {
 });
 
 // =============================================================================
+// Port Configuration (從 Rust AppState 透過環境變數傳入)
+// =============================================================================
+
+/**
+ * 從環境變數讀取 port（Rust 啟動 Sidecar 時設定）
+ * 不使用硬編碼，符合 Spec 要求
+ */
+function getPortFromEnv(envVar: string, defaultPort: number): number {
+  const envValue = process.env[envVar];
+  if (envValue) {
+    const port = parseInt(envValue, 10);
+    if (!isNaN(port) && port > 0 && port <= 65535) {
+      console.log(`[Sidecar] ${envVar}=${port} (from environment)`);
+      return port;
+    }
+    console.warn(`[Sidecar] Invalid ${envVar}="${envValue}", using default ${defaultPort}`);
+  } else {
+    console.log(`[Sidecar] ${envVar} not set, using default ${defaultPort}`);
+  }
+  return defaultPort;
+}
+
+const TOWER_PORT = getPortFromEnv('TOWER_PORT', 3701);
+const STATE_PORT = getPortFromEnv('STATE_PORT', 3702);
+
+// =============================================================================
 // Tower MCP Server (Task 06)
 // =============================================================================
 
-const TOWER_PORT = 3701;
 let towerMcpServer: TowerMcpServer | null = null;
 
 /**
@@ -76,7 +101,6 @@ async function initializeTowerMcp(): Promise<void> {
 // State MCP Server (Task 07)
 // =============================================================================
 
-const STATE_PORT = 3702;
 let stateMcpServer: StateMcpServer | null = null;
 
 /**
