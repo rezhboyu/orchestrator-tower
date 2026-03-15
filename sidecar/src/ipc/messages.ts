@@ -158,7 +158,9 @@ export type IpcQueryType =
   | 'pause_worker'
   | 'resume_worker'
   | 'approve_hitl'
-  | 'deny_hitl';
+  | 'deny_hitl'
+  // Quota 管理操作（Task 10）
+  | 'freeze_all_agents';
 
 export interface IpcRequest {
   type: 'ipc:query';

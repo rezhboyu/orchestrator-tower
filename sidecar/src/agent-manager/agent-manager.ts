@@ -6,6 +6,7 @@
  * - Agent 子程序啟動/停止
  * - stdout 解析與 IPC 上報
  * - 崩潰偵測（不自動重啟，只上報）
+ * - 配額管理整合（Task 10）
  *
  * 架構原則：
  * - Node.js 不持有業務狀態（只有程序層面狀態）
@@ -17,6 +18,7 @@ import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
 import type { IpcClient } from '../ipc/index.js';
 import type { SidecarEvent, RustCommand } from '../ipc/messages.js';
+import { QuotaManager } from '../quota/index.js';
 import {
   ClaudeStreamParser,
   GeminiAcpParser,
@@ -58,10 +60,12 @@ export class AgentManager extends EventEmitter<AgentManagerEvents> {
   private ipc: IpcClient;
   private cliPaths: CliPaths | null = null;
   private initialized = false;
+  private quotaManager: QuotaManager;
 
   constructor(ipc: IpcClient) {
     super();
     this.ipc = ipc;
+    this.quotaManager = new QuotaManager(ipc);
     this.setupCommandHandler();
   }
 
@@ -167,6 +171,10 @@ export class AgentManager extends EventEmitter<AgentManagerEvents> {
     }
 
     console.log(`[AgentManager] Starting agent ${config.agentId}`);
+
+    // 註冊至配額管理器（Task 10）
+    const priority = this.quotaManager.registerAgent(config.agentId, config.role);
+    console.log(`[AgentManager] Agent ${config.agentId} registered with priority ${priority}`);
 
     // 檢查 CLI 可用性
     if (config.protocol === 'claude-stream-json') {
@@ -414,7 +422,17 @@ export class AgentManager extends EventEmitter<AgentManagerEvents> {
       }, 10000);
     });
 
+    // 關閉配額管理器（Task 10）
+    await this.quotaManager.shutdown();
+
     console.log('[AgentManager] All agents shut down');
+  }
+
+  /**
+   * 取得配額管理器（用於外部整合）
+   */
+  getQuotaManager(): QuotaManager {
+    return this.quotaManager;
   }
 
   /**
@@ -482,6 +500,9 @@ export class AgentManager extends EventEmitter<AgentManagerEvents> {
       this.handleCrash(crashInfo);
       this.emit('agentCrashed', agentId, crashInfo);
     }
+
+    // 從配額管理器取消註冊（Task 10）
+    this.quotaManager.unregisterAgent(agentId);
 
     // 從管理列表移除
     this.agents.delete(agentId);

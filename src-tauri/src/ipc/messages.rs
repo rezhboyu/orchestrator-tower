@@ -212,6 +212,9 @@ pub enum IpcQueryType {
     ResumeWorker,
     ApproveHitl,
     DenyHitl,
+
+    // Quota 管理操作（Task 10）
+    FreezeAllAgents,
 }
 
 /// IPC 查詢請求（來自 Node.js）

@@ -40,6 +40,13 @@ pub async fn handle_query(
         IpcQueryType::ResumeWorker => handle_resume_worker(request, command_tx).await,
         IpcQueryType::ApproveHitl => handle_approve_hitl(request, app_state, command_tx).await,
         IpcQueryType::DenyHitl => handle_deny_hitl(request, app_state, command_tx).await,
+
+        // =========================================================================
+        // Quota 管理操作（Task 10）
+        // =========================================================================
+        IpcQueryType::FreezeAllAgents => {
+            handle_freeze_all_agents(request, app_state, command_tx).await
+        }
     }
 }
 
@@ -348,6 +355,82 @@ async fn handle_deny_hitl(
             request.ipc_request_id.clone(),
             format!("Failed to send command: {}", e),
         ),
+    }
+}
+
+// =============================================================================
+// Quota 管理操作處理器（Task 10）
+// =============================================================================
+
+/// 凍結所有 Agent
+///
+/// 當配額耗盡時，Node.js QuotaManager 會呼叫此函數。
+/// 遍歷所有已註冊的 Agent 並發送 agent:freeze 指令。
+///
+/// 參數：
+/// - reason: 凍結原因（預設 "quota"）
+/// - immediate: 是否立即凍結（預設 false，等待當前 turn 完成）
+async fn handle_freeze_all_agents(
+    request: &IpcRequest,
+    app_state: &Arc<AppState>,
+    command_tx: &mpsc::Sender<RustCommand>,
+) -> IpcResponse {
+    // 解析 immediate 參數（配額凍結預設 false，等待當前 turn 完成）
+    let immediate = request
+        .params
+        .get("immediate")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    // 取得所有 Agent ID
+    let agent_ids: Vec<String> = {
+        let agents = app_state.agents.read().unwrap();
+        agents.keys().cloned().collect()
+    };
+
+    if agent_ids.is_empty() {
+        return IpcResponse::success(
+            request.ipc_request_id.clone(),
+            json!({ "ok": true, "frozenCount": 0 }),
+        );
+    }
+
+    let mut frozen_count = 0;
+    let mut errors: Vec<String> = Vec::new();
+
+    // 對每個 Agent 發送 freeze 指令
+    for agent_id in agent_ids {
+        let cmd = RustCommand::AgentFreeze {
+            agent_id: agent_id.clone(),
+            reason: FreezeReason::Quota,
+            immediate,
+        };
+
+        match command_tx.send(cmd).await {
+            Ok(_) => {
+                frozen_count += 1;
+            }
+            Err(e) => {
+                errors.push(format!("Failed to freeze {}: {}", agent_id, e));
+            }
+        }
+    }
+
+    if errors.is_empty() {
+        IpcResponse::success(
+            request.ipc_request_id.clone(),
+            json!({ "ok": true, "frozenCount": frozen_count }),
+        )
+    } else {
+        // 部分成功，回報錯誤但仍標記為成功
+        IpcResponse::success(
+            request.ipc_request_id.clone(),
+            json!({
+                "ok": true,
+                "frozenCount": frozen_count,
+                "errors": errors
+            }),
+        )
     }
 }
 
