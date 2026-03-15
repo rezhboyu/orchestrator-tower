@@ -6,6 +6,7 @@
  */
 
 import { IpcClient, type RustCommand } from './ipc/index.js';
+import { startTowerMcpServer, type TowerMcpServer } from './mcp-servers/tower/index.js';
 
 console.log('[Sidecar] Orchestrator Tower Sidecar starting...');
 console.log(`[Sidecar] Node.js version: ${process.version}`);
@@ -21,6 +22,34 @@ const ipcClient = new IpcClient({
   queryTimeout: 10000,
   maxReconnectAttempts: 10,
 });
+
+// =============================================================================
+// Tower MCP Server (Task 06)
+// =============================================================================
+
+const TOWER_PORT = 3701;
+let towerMcpServer: TowerMcpServer | null = null;
+
+/**
+ * 初始化 Tower MCP Server
+ */
+async function initializeTowerMcp(): Promise<void> {
+  try {
+    towerMcpServer = await startTowerMcpServer(ipcClient, {
+      preferredPort: TOWER_PORT,
+    });
+    console.log(
+      `[Sidecar] Tower MCP Server started on port ${towerMcpServer.actualPort}`
+    );
+  } catch (err) {
+    console.error('[Sidecar] Failed to start Tower MCP Server:', err);
+    throw err;
+  }
+}
+
+// =============================================================================
+// IPC Events
+// =============================================================================
 
 // 連線事件
 ipcClient.on('connect', () => {
@@ -83,7 +112,12 @@ function handleCommand(command: RustCommand): void {
       console.log(
         `[Sidecar] HITL response for ${command.requestId}: ${command.approved ? 'approved' : 'denied'}`
       );
-      // TODO: Task 06 實作 Tower MCP Server
+      // 路由至 Tower MCP Server
+      if (towerMcpServer) {
+        towerMcpServer.handleHitlResponse(command);
+      } else {
+        console.warn('[Sidecar] Tower MCP Server not initialized, ignoring HITL response');
+      }
       break;
 
     default:
@@ -95,26 +129,51 @@ function handleCommand(command: RustCommand): void {
 // Startup
 // =============================================================================
 
-// 連線至 Rust IPC Server
-ipcClient.connect();
+async function startup(): Promise<void> {
+  // 啟動 Tower MCP Server
+  await initializeTowerMcp();
+
+  // 連線至 Rust IPC Server
+  ipcClient.connect();
+
+  console.log('[Sidecar] Ready and waiting for IPC connection...');
+}
 
 // 保持程序運行
 process.stdin.resume();
+
+// 執行啟動
+startup().catch((err) => {
+  console.error('[Sidecar] Startup failed:', err);
+  process.exit(1);
+});
 
 // =============================================================================
 // Graceful Shutdown
 // =============================================================================
 
-process.on('SIGTERM', () => {
-  console.log('[Sidecar] Received SIGTERM, shutting down...');
+async function shutdown(): Promise<void> {
+  console.log('[Sidecar] Shutting down...');
+
+  // 關閉 Tower MCP Server
+  if (towerMcpServer) {
+    await towerMcpServer.shutdown();
+    towerMcpServer = null;
+  }
+
+  // 斷開 IPC 連線
   ipcClient.disconnect();
+
+  console.log('[Sidecar] Shutdown complete');
   process.exit(0);
+}
+
+process.on('SIGTERM', () => {
+  console.log('[Sidecar] Received SIGTERM');
+  shutdown();
 });
 
 process.on('SIGINT', () => {
-  console.log('[Sidecar] Received SIGINT, shutting down...');
-  ipcClient.disconnect();
-  process.exit(0);
+  console.log('[Sidecar] Received SIGINT');
+  shutdown();
 });
-
-console.log('[Sidecar] Ready and waiting for IPC connection...');
