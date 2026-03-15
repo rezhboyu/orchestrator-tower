@@ -1,4 +1,5 @@
 mod commands;
+pub mod db;
 pub mod git;
 mod ipc;
 mod state;
