@@ -257,20 +257,20 @@ npm run tauri dev   # 確認無 panic，console 無 error
 
 | Task | 說明 | 狀態 |
 |------|------|------|
-| 01 | 專案骨架初始化 | ⬜ 未開始 |
-| 02 | Rust AppState 與 Tauri Commands 骨架 | ⬜ 未開始 |
-| 03 | Node.js ↔ Rust IPC 通道 | ⬜ 未開始 |
-| 04 | stream-json 解析器 | ⬜ 未開始 |
-| 05 | Worker Agent 子程序管理 | ⬜ 未開始 |
-| 06 | Tower MCP Server（3701） | ⬜ 未開始 |
+| 01 | 專案骨架初始化 | ✅ 完成 |
+| 02 | Rust AppState 與 Tauri Commands 骨架 | ✅ 完成 |
+| 03 | Node.js ↔ Rust IPC 通道 | ✅ 完成 |
+| 04 | stream-json 解析器 | ✅ 完成 |
+| 05 | Worker Agent 子程序管理 | ✅ 完成 |
+| 06 | Tower MCP Server（3701） | ✅ 完成 |
 | 07 | State MCP Server（3702） | ⬜ 未開始 |
-| 08 | Git Worktree + Shadow Branch 快照 | ⬜ 未開始 |
+| 08 | Git Worktree + Shadow Branch 快照 | ✅ 完成 |
 | 09 | HITL 風險分類引擎 | ⬜ 未開始 |
 | 10 | 配額管理（Bottleneck） | ⬜ 未開始 |
 | 11 | React UI 骨架 | ⬜ 未開始 |
 | 12 | AgentPanel 元件 | ⬜ 未開始 |
 | 13 | ReasoningTree（React Flow） | ⬜ 未開始 |
-| 14 | SQLite 持久層 | ⬜ 未開始 |
+| 14 | SQLite 持久層 | ✅ 完成 |
 | 15 | 崩潰恢復與 Session 恢復 | ⬜ 未開始 |
 | 16 | 專案與 Agent 生命週期管理 | ⬜ 未開始 |
 

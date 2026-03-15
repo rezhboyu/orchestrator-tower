@@ -23,6 +23,8 @@ Orchestrator Tower 是一個桌面端 AI 代理管理系統，採用四層架構
 | 02 | Rust AppState 與 Tauri Commands 骨架 | - | ✅ 完成 |
 | 03 | Node.js ↔ Rust IPC 通道 | ✅ 已合併 | ✅ 完成 |
 | 04 | stream-json 解析器 | ✅ 已合併 | ✅ 完成 |
+| 05 | Worker Agent 子程序管理 | ✅ 已合併 | ✅ 完成 |
+| 06 | Tower MCP Server (3701) | ✅ 已合併 | ✅ 完成 |
 | 08 | Git Worktree + Shadow Branch 快照 | ✅ 已合併 | ✅ 完成 |
 | 14 | SQLite 持久層 | ✅ 已合併 | ✅ 完成 |
 
@@ -63,16 +65,33 @@ orchestrator-tower/
         │   ├── messages.ts       # TypeScript 型別定義
         │   ├── platform.ts       # 跨平台 socket 路徑
         │   └── client.test.ts    # 10 個測試
-        └── stream-parser/        # Task 04: Stream Parser
-            ├── index.ts          # 模組匯出
-            ├── types-claude.ts   # Claude stream-json 型別
-            ├── types-gemini-acp.ts # Gemini ACP JSON-RPC 型別
-            ├── normalize.ts      # NormalizedEvent 統一格式
-            ├── claude-parser.ts  # Claude 解析器
-            ├── gemini-acp-parser.ts # Gemini 解析器
-            ├── line-buffer.ts    # NDJSON 分行處理
-            ├── process-guard.ts  # 掛起防護 (SIGTERM/SIGKILL)
-            └── parser.test.ts    # 19 個測試
+        ├── stream-parser/        # Task 04: Stream Parser
+        │   ├── index.ts          # 模組匯出
+        │   ├── types-claude.ts   # Claude stream-json 型別
+        │   ├── types-gemini-acp.ts # Gemini ACP JSON-RPC 型別
+        │   ├── normalize.ts      # NormalizedEvent 統一格式
+        │   ├── claude-parser.ts  # Claude 解析器
+        │   ├── gemini-acp-parser.ts # Gemini 解析器
+        │   ├── line-buffer.ts    # NDJSON 分行處理
+        │   ├── process-guard.ts  # 掛起防護 (SIGTERM/SIGKILL)
+        │   └── parser.test.ts    # 19 個測試
+        ├── agent-manager/        # Task 05: Agent Manager
+        │   ├── index.ts          # 模組匯出
+        │   ├── agent-manager.ts  # AgentManager 核心類別
+        │   ├── cli-detector.ts   # CLI 路徑偵測
+        │   ├── spawn-worker.ts   # Worker Agent 啟動
+        │   ├── spawn-master.ts   # Master Orchestrator 啟動
+        │   ├── types.ts          # 型別定義
+        │   └── agent-manager.test.ts # 22 個測試
+        └── mcp-servers/tower/    # Task 06: Tower MCP Server
+            ├── index.ts          # 模組匯出與啟動函數
+            ├── server.ts         # Express + MCP SDK 整合
+            ├── auth-tool.ts      # mcp__tower__auth 工具
+            ├── risk-classifier.ts # 風險分類器
+            ├── pending-manager.ts # HITL 請求管理
+            ├── port-finder.ts    # 可用 port 探測
+            ├── types.ts          # 型別定義
+            └── tower.test.ts     # 35 個測試
 ```
 
 ---
@@ -90,9 +109,11 @@ running 50 tests
 
 ### Node.js (npm test)
 ```
-29 tests passed
+86 tests passed
 - ipc/client.test.ts: 10 tests
-- stream-parser/parser.test.ts: 19 tests (11 規格 + 8 額外)
+- stream-parser/parser.test.ts: 19 tests
+- agent-manager/agent-manager.test.ts: 22 tests
+- mcp-servers/tower/tower.test.ts: 35 tests
 ```
 
 ---
@@ -105,19 +126,17 @@ running 50 tests
 
 | Task | 說明 | 依賴 | 理由 |
 |------|------|------|------|
-| **05** | Worker Agent 子程序管理 | T03, T04 ✅ | 核心功能，解鎖 Task 15 |
-| **06** | Tower MCP Server (3701) | T03 ✅ | HITL 審批入口 |
+| **09** | HITL 風險分類引擎 | T06 ✅ | 完善 Task 06 的分類邏輯 |
+| **07** | State MCP Server (3702) | T03 ✅ | 狀態查詢 API |
 | **16** | 專案/Agent 生命週期 | T08, T14 ✅ | projects.json CRUD |
 
 ### 其他可開始
 
 | Task | 說明 | 依賴 |
 |------|------|------|
-| 07 | State MCP Server (3702) | T03 ✅ |
-| 09 | HITL 風險分類引擎 | T06 |
 | 10 | 配額管理 (Bottleneck) | T03 ✅ |
 | 11 | React UI 骨架 | T02 ✅ |
-| 15 | 崩潰恢復與 Session 恢復 | T05, T08 ✅ |
+| 15 | 崩潰恢復與 Session 恢復 | T05 ✅, T08 ✅ |
 
 ---
 
@@ -137,10 +156,40 @@ running 50 tests
 - `hitl:response`
 
 **SidecarEvent 類型**：
-- `session_start`, `session_end`
-- `text_delta`, `tool_call`, `tool_result`
-- `hitl:request`, `agent:crash`
-- `heartbeat`
+- `agent:session_start`, `agent:session_end`
+- `agent:text`, `agent:tool_use`, `agent:tool_result`
+- `agent:stream_delta`, `agent:crash`
+- `hitl:request`, `heartbeat`
+
+### Tower MCP Server (Task 06)
+
+**端點**：`http://localhost:3701/mcp/:agentId`
+
+**auth tool 協議**：
+```
+輸入: { tool_name, tool_use_id, input }
+輸出 (允許): { behavior: 'allow', updatedInput }
+輸出 (拒絕): { behavior: 'deny', message }
+```
+
+**風險分類**：
+- `critical`: rm/delete/drop/format/truncate, git reset --hard
+- `high`: .env/.key/.pem/.secret 寫入
+- `medium`: Write/Edit/Bash
+- `low`: Read/Glob/Grep (自動批准)
+
+### Agent Manager (Task 05)
+
+**CLI 偵測優先順序**：
+1. 環境變數 `ORCHESTRATOR_CLAUDE_PATH` / `ORCHESTRATOR_GEMINI_PATH`
+2. `which`/`where` 命令
+3. `~/.local/bin/claude`
+4. `~/.npm-global/bin/`
+5. `npm root -g` 動態查詢
+
+**Windows 支援**：
+- Claude Code 需透過 Git Bash 執行
+- Gemini CLI 可直接執行 (gemini.cmd)
 
 ### Stream Parser
 
@@ -185,10 +234,11 @@ running 50 tests
 
 | 位置 | 說明 |
 |------|------|
-| `git/mod.rs:212-215` | projectId/agentId 包含底線的邊界情況 |
-| `state.rs:31, 88` | `AgentState::new`, `with_ports` 待後續 Task 使用 |
-| `db/agents.rs` | AgentRecord CRUD 缺失，待 Task 16 補齊 |
-| `ipc/mod.rs:334-338` | IPC Query 未實作，待 Task 07 |
+| `agent-manager.ts:559` | Task 09 實作 risk classifier (目前硬編碼 medium) |
+| `cli-detector.ts:228` | macOS Keychain 的 service 名稱確認 |
+| `git/mod.rs:214-226` | projectId/agentId 包含底線的邊界情況 |
+| `commands.rs` | 7 個 Tauri Commands 待實作 |
+| `ipc/mod.rs:335` | IPC Query 未實作，待 Task 07 |
 
 ---
 
