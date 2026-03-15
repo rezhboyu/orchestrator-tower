@@ -266,8 +266,8 @@ npm run tauri dev   # 確認無 panic，console 無 error
 | 07 | State MCP Server（3702） | ✅ 完成 |
 | 08 | Git Worktree + Shadow Branch 快照 | ✅ 完成 |
 | 09 | HITL 風險分類引擎 | ✅ 完成 |
-| 10 | 配額管理（Bottleneck） | ⬜ 未開始 |
-| 11 | React UI 骨架 | ⬜ 未開始 |
+| 10 | 配額管理（Bottleneck） | ✅ 完成 |
+| 11 | React UI 骨架 | ✅ 完成 |
 | 12 | AgentPanel 元件 | ⬜ 未開始 |
 | 13 | ReasoningTree（React Flow） | ⬜ 未開始 |
 | 14 | SQLite 持久層 | ✅ 完成 |
