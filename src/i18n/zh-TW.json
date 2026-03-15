@@ -1,0 +1,32 @@
+{
+  "app": {
+    "title": "Orchestrator Tower"
+  },
+  "toolbar": {
+    "resetLayout": "重置佈局",
+    "showReasoningTree": "顯示推理樹",
+    "language": "語言"
+  },
+  "sidebar": {
+    "projects": "專案",
+    "agents": "代理",
+    "settings": "設定"
+  },
+  "status": {
+    "idle": "閒置",
+    "running": "執行中",
+    "waiting_hitl": "等待審核",
+    "error": "錯誤",
+    "frozen": "暫停"
+  },
+  "hitl": {
+    "approve": "批准",
+    "deny": "拒絕",
+    "riskLevel": "風險等級",
+    "toolName": "工具名稱",
+    "input": "輸入內容"
+  },
+  "notifications": {
+    "layoutReset": "佈局已重置"
+  }
+}

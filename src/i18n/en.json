@@ -1,0 +1,32 @@
+{
+  "app": {
+    "title": "Orchestrator Tower"
+  },
+  "toolbar": {
+    "resetLayout": "Reset Layout",
+    "showReasoningTree": "Show Reasoning Tree",
+    "language": "Language"
+  },
+  "sidebar": {
+    "projects": "Projects",
+    "agents": "Agents",
+    "settings": "Settings"
+  },
+  "status": {
+    "idle": "Idle",
+    "running": "Running",
+    "waiting_hitl": "Waiting Review",
+    "error": "Error",
+    "frozen": "Frozen"
+  },
+  "hitl": {
+    "approve": "Approve",
+    "deny": "Deny",
+    "riskLevel": "Risk Level",
+    "toolName": "Tool Name",
+    "input": "Input"
+  },
+  "notifications": {
+    "layoutReset": "Layout has been reset"
+  }
+}
