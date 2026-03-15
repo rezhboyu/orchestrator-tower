@@ -200,9 +200,18 @@ pub enum RustCommand {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum IpcQueryType {
+    // 狀態查詢
     GetWorkerStatus,
     GetQuotaStatus,
     GetGitSnapshot,
+    GetBModeStatus,
+
+    // State MCP 控制操作（Task 07）
+    AssignTask,
+    PauseWorker,
+    ResumeWorker,
+    ApproveHitl,
+    DenyHitl,
 }
 
 /// IPC 查詢請求（來自 Node.js）

@@ -7,6 +7,7 @@
 
 import { IpcClient, type RustCommand } from './ipc/index.js';
 import { startTowerMcpServer, type TowerMcpServer } from './mcp-servers/tower/index.js';
+import { startStateMcpServer, type StateMcpServer } from './mcp-servers/state/index.js';
 import { AgentManager } from './agent-manager/index.js';
 
 console.log('[Sidecar] Orchestrator Tower Sidecar starting...');
@@ -48,10 +49,35 @@ agentManager.on('error', (agentId, err) => {
 });
 
 // =============================================================================
+// Port Configuration (從 Rust AppState 透過環境變數傳入)
+// =============================================================================
+
+/**
+ * 從環境變數讀取 port（Rust 啟動 Sidecar 時設定）
+ * 不使用硬編碼，符合 Spec 要求
+ */
+function getPortFromEnv(envVar: string, defaultPort: number): number {
+  const envValue = process.env[envVar];
+  if (envValue) {
+    const port = parseInt(envValue, 10);
+    if (!isNaN(port) && port > 0 && port <= 65535) {
+      console.log(`[Sidecar] ${envVar}=${port} (from environment)`);
+      return port;
+    }
+    console.warn(`[Sidecar] Invalid ${envVar}="${envValue}", using default ${defaultPort}`);
+  } else {
+    console.log(`[Sidecar] ${envVar} not set, using default ${defaultPort}`);
+  }
+  return defaultPort;
+}
+
+const TOWER_PORT = getPortFromEnv('TOWER_PORT', 3701);
+const STATE_PORT = getPortFromEnv('STATE_PORT', 3702);
+
+// =============================================================================
 // Tower MCP Server (Task 06)
 // =============================================================================
 
-const TOWER_PORT = 3701;
 let towerMcpServer: TowerMcpServer | null = null;
 
 /**
@@ -67,6 +93,29 @@ async function initializeTowerMcp(): Promise<void> {
     );
   } catch (err) {
     console.error('[Sidecar] Failed to start Tower MCP Server:', err);
+    throw err;
+  }
+}
+
+// =============================================================================
+// State MCP Server (Task 07)
+// =============================================================================
+
+let stateMcpServer: StateMcpServer | null = null;
+
+/**
+ * 初始化 State MCP Server
+ */
+async function initializeStateMcp(): Promise<void> {
+  try {
+    stateMcpServer = await startStateMcpServer(ipcClient, {
+      preferredPort: STATE_PORT,
+    });
+    console.log(
+      `[Sidecar] State MCP Server started on port ${stateMcpServer.actualPort}`
+    );
+  } catch (err) {
+    console.error('[Sidecar] Failed to start State MCP Server:', err);
     throw err;
   }
 }
@@ -136,6 +185,9 @@ async function startup(): Promise<void> {
   // 啟動 Tower MCP Server
   await initializeTowerMcp();
 
+  // 啟動 State MCP Server
+  await initializeStateMcp();
+
   // 連線至 Rust IPC Server
   ipcClient.connect();
 
@@ -165,6 +217,12 @@ async function shutdown(): Promise<void> {
   if (towerMcpServer) {
     await towerMcpServer.shutdown();
     towerMcpServer = null;
+  }
+
+  // 關閉 State MCP Server
+  if (stateMcpServer) {
+    await stateMcpServer.shutdown();
+    stateMcpServer = null;
   }
 
   // 斷開 IPC 連線

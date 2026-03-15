@@ -4,10 +4,14 @@
 //! - 監聽 Unix Socket / Named Pipe
 //! - 接收 SidecarEvent 從 Node.js
 //! - 發送 RustCommand 至 Node.js
+//! - 處理 IPC 查詢並回傳結果（Task 07）
 //! - 心跳超時偵測（3s 未收到 → Sidecar 崩潰）
 
+pub mod handler;
 pub mod messages;
 
+use crate::state::AppState;
+use handler::handle_query;
 use messages::{IncomingMessage, IpcResponse, RustCommand, SidecarEvent};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -103,6 +107,8 @@ pub struct IpcServerHandle {
     event_tx: broadcast::Sender<SidecarEvent>,
     /// Server 狀態
     state: Arc<IpcServerState>,
+    /// 應用程式狀態（用於 IPC 查詢）
+    app_state: Arc<AppState>,
 }
 
 impl IpcServerHandle {
@@ -136,20 +142,25 @@ impl IpcServerHandle {
 
 /// 啟動 IPC Server
 ///
-/// 回傳 `IpcServerHandle` 用於與 Server 互動
-pub async fn start_ipc_server() -> Result<IpcServerHandle, IpcError> {
+/// # Arguments
+/// * `app_state` - 應用程式狀態，用於處理 IPC 查詢
+///
+/// # Returns
+/// * `IpcServerHandle` 用於與 Server 互動
+pub async fn start_ipc_server(app_state: Arc<AppState>) -> Result<IpcServerHandle, IpcError> {
     let state = Arc::new(IpcServerState::new());
     let (command_tx, command_rx) = mpsc::channel::<RustCommand>(100);
     let (event_tx, _) = broadcast::channel::<SidecarEvent>(100);
 
     let handle = IpcServerHandle {
-        command_tx,
+        command_tx: command_tx.clone(),
         event_tx: event_tx.clone(),
         state: state.clone(),
+        app_state: app_state.clone(),
     };
 
     // 啟動 Server 任務
-    tokio::spawn(run_server(state, command_rx, event_tx));
+    tokio::spawn(run_server(state, command_tx, command_rx, event_tx, app_state));
 
     Ok(handle)
 }
@@ -157,8 +168,10 @@ pub async fn start_ipc_server() -> Result<IpcServerHandle, IpcError> {
 #[cfg(unix)]
 async fn run_server(
     state: Arc<IpcServerState>,
+    command_tx: mpsc::Sender<RustCommand>,
     mut command_rx: mpsc::Receiver<RustCommand>,
     event_tx: broadcast::Sender<SidecarEvent>,
+    app_state: Arc<AppState>,
 ) {
     // 移除舊的 socket 檔案
     let _ = std::fs::remove_file(SOCKET_PATH);
@@ -195,8 +208,17 @@ async fn run_server(
                                     break;
                                 }
                                 Ok(_) => {
-                                    if let Err(e) = handle_incoming_message(&line, &state, &event_tx).await {
-                                        eprintln!("[IPC] Error handling message: {}", e);
+                                    if let Some(response) = handle_incoming_message(
+                                        &line,
+                                        &state,
+                                        &event_tx,
+                                        &app_state,
+                                        &command_tx
+                                    ).await {
+                                        // 發送 IPC 查詢回應
+                                        if let Err(e) = send_response(&mut writer, &response).await {
+                                            eprintln!("[IPC] Error sending response: {}", e);
+                                        }
                                     }
                                     line.clear();
                                 }
@@ -228,8 +250,10 @@ async fn run_server(
 #[cfg(windows)]
 async fn run_server(
     state: Arc<IpcServerState>,
+    command_tx: mpsc::Sender<RustCommand>,
     mut command_rx: mpsc::Receiver<RustCommand>,
     event_tx: broadcast::Sender<SidecarEvent>,
+    app_state: Arc<AppState>,
 ) {
     println!("[IPC] Server starting on {}", PIPE_NAME);
 
@@ -260,7 +284,15 @@ async fn run_server(
         state.update_heartbeat().await;
 
         // 處理連線
-        handle_windows_connection(server, &state, &mut command_rx, &event_tx).await;
+        handle_windows_connection(
+            server,
+            &state,
+            &command_tx,
+            &mut command_rx,
+            &event_tx,
+            &app_state,
+        )
+        .await;
 
         state.set_connected(false).await;
         println!("[IPC] Client disconnected");
@@ -271,8 +303,10 @@ async fn run_server(
 async fn handle_windows_connection(
     server: NamedPipeServer,
     state: &Arc<IpcServerState>,
+    command_tx: &mpsc::Sender<RustCommand>,
     command_rx: &mut mpsc::Receiver<RustCommand>,
     event_tx: &broadcast::Sender<SidecarEvent>,
+    app_state: &Arc<AppState>,
 ) {
     let (reader, mut writer) = tokio::io::split(server);
     let mut reader = BufReader::new(reader);
@@ -284,8 +318,17 @@ async fn handle_windows_connection(
                 match result {
                     Ok(0) => break,
                     Ok(_) => {
-                        if let Err(e) = handle_incoming_message(&line, state, event_tx).await {
-                            eprintln!("[IPC] Error handling message: {}", e);
+                        if let Some(response) = handle_incoming_message(
+                            &line,
+                            state,
+                            event_tx,
+                            app_state,
+                            command_tx
+                        ).await {
+                            // 發送 IPC 查詢回應
+                            if let Err(e) = send_response(&mut writer, &response).await {
+                                eprintln!("[IPC] Error sending response: {}", e);
+                            }
                         }
                         line.clear();
                     }
@@ -306,17 +349,27 @@ async fn handle_windows_connection(
 }
 
 /// 處理來自 Node.js 的訊息
+///
+/// 如果訊息是 IPC 查詢，回傳 Some(IpcResponse)；否則回傳 None
 async fn handle_incoming_message(
     line: &str,
     state: &Arc<IpcServerState>,
     event_tx: &broadcast::Sender<SidecarEvent>,
-) -> Result<(), IpcError> {
+    app_state: &Arc<AppState>,
+    command_tx: &mpsc::Sender<RustCommand>,
+) -> Option<IpcResponse> {
     let trimmed = line.trim();
     if trimmed.is_empty() {
-        return Ok(());
+        return None;
     }
 
-    let msg: IncomingMessage = serde_json::from_str(trimmed)?;
+    let msg: IncomingMessage = match serde_json::from_str(trimmed) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("[IPC] Failed to parse message: {}", e);
+            return None;
+        }
+    };
 
     match msg {
         IncomingMessage::Event(event) => {
@@ -325,20 +378,19 @@ async fn handle_incoming_message(
 
             // 特別處理心跳事件（不需要廣播）
             if matches!(event, SidecarEvent::Heartbeat) {
-                return Ok(());
+                return None;
             }
 
             // 廣播事件
             let _ = event_tx.send(event);
+            None
         }
         IncomingMessage::Query(request) => {
-            // TODO: 處理 IPC 查詢（需要 AppState 支援）
-            // 目前先回傳錯誤
-            eprintln!("[IPC] Query not implemented: {:?}", request.query);
+            // 處理 IPC 查詢（Task 07）
+            let response = handle_query(&request, app_state, command_tx).await;
+            Some(response)
         }
     }
-
-    Ok(())
 }
 
 /// 發送指令至 Node.js
@@ -354,7 +406,6 @@ async fn send_command<W: AsyncWriteExt + Unpin>(
 }
 
 /// 發送 IPC 回應至 Node.js
-#[allow(dead_code)]
 async fn send_response<W: AsyncWriteExt + Unpin>(
     writer: &mut W,
     response: &IpcResponse,

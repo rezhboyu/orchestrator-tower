@@ -151,7 +151,14 @@ export type RustCommand =
 export type IpcQueryType =
   | 'get_worker_status'
   | 'get_quota_status'
-  | 'get_git_snapshot';
+  | 'get_git_snapshot'
+  | 'get_b_mode_status'
+  // State MCP 控制操作（透過 query 請求 Rust 執行）
+  | 'assign_task'
+  | 'pause_worker'
+  | 'resume_worker'
+  | 'approve_hitl'
+  | 'deny_hitl';
 
 export interface IpcRequest {
   type: 'ipc:query';
