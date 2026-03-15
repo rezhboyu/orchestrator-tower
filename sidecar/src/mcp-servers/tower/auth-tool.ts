@@ -13,7 +13,7 @@ import type { IpcClient } from '../../ipc/client.js';
 import type { HitlRequest } from '../../ipc/messages.js';
 import type { AuthToolResponse } from './types.js';
 import { PendingHitlManager } from './pending-manager.js';
-import { classifyRisk, requiresHumanApproval } from './risk-classifier.js';
+import { classifyRisk, requiresHumanApproval } from '../../hitl/index.js';
 
 /**
  * Auth Tool 輸入 Schema
