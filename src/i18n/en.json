@@ -24,7 +24,23 @@
     "deny": "Deny",
     "riskLevel": "Risk Level",
     "toolName": "Tool Name",
-    "input": "Input"
+    "input": "Input",
+    "cancel": "Cancel",
+    "confirmDeny": "Confirm Deny",
+    "denyReasonPlaceholder": "Enter reason for denial..."
+  },
+  "agentPanel": {
+    "noAgent": "No agents available",
+    "noMessages": "No messages yet",
+    "toolUse": "Tool Call",
+    "toolResult": "Tool Result",
+    "error": "Error"
+  },
+  "reasoningTree": {
+    "noNodes": "No reasoning nodes yet",
+    "gitSnapshot": "Git Snapshot",
+    "rollback": "Rollback to this state",
+    "rollingBack": "Rolling back..."
   },
   "notifications": {
     "layoutReset": "Layout has been reset"

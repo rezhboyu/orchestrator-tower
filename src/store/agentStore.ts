@@ -10,6 +10,9 @@ import type {
   AgentSessionEndEvent,
   AgentCrashEvent,
   HitlRequestEvent,
+  ReasoningNode,
+  ReasoningNodeEvent,
+  AgentViewport,
 } from '../types/events';
 
 interface HitlRequest {
@@ -37,6 +40,8 @@ interface AgentData {
 interface AgentStoreState {
   agents: Record<string, AgentData>;
   activeAgentId: string | null;
+  reasoningNodes: Record<string, ReasoningNode[]>; // agentId -> nodes
+  agentViewports: Record<string, AgentViewport>;   // agentId -> viewport
 
   // Actions (purely state updates, no business logic)
   setActiveAgent: (agentId: string | null) => void;
@@ -48,6 +53,10 @@ interface AgentStoreState {
   handleCrash: (agentId: string, exitCode?: number, signal?: string) => void;
   handleHitlRequest: (agentId: string, request: HitlRequest) => void;
   clearHitlRequest: (agentId: string) => void;
+  // ReasoningTree actions
+  handleReasoningNode: (agentId: string, node: ReasoningNode) => void;
+  setAgentViewport: (agentId: string, viewport: AgentViewport) => void;
+  clearReasoningNodes: (agentId: string) => void;
 }
 
 const createEmptyAgent = (id: string): AgentData => ({
@@ -63,6 +72,8 @@ const createEmptyAgent = (id: string): AgentData => ({
 export const useAgentStore = create<AgentStoreState>((set) => ({
   agents: {},
   activeAgentId: null,
+  reasoningNodes: {},
+  agentViewports: {},
 
   setActiveAgent: (agentId) => set({ activeAgentId: agentId }),
 
@@ -173,6 +184,41 @@ export const useAgentStore = create<AgentStoreState>((set) => ({
       },
     };
   }),
+
+  // ReasoningTree actions
+  handleReasoningNode: (agentId, node) => set((state) => {
+    const existingNodes = state.reasoningNodes[agentId] || [];
+    // Check if node already exists (update) or is new (append)
+    const nodeIndex = existingNodes.findIndex((n) => n.id === node.id);
+    let updatedNodes: ReasoningNode[];
+    if (nodeIndex >= 0) {
+      // Update existing node
+      updatedNodes = [...existingNodes];
+      updatedNodes[nodeIndex] = node;
+    } else {
+      // Append new node
+      updatedNodes = [...existingNodes, node];
+    }
+    return {
+      reasoningNodes: {
+        ...state.reasoningNodes,
+        [agentId]: updatedNodes,
+      },
+    };
+  }),
+
+  setAgentViewport: (agentId, viewport) => set((state) => ({
+    agentViewports: {
+      ...state.agentViewports,
+      [agentId]: viewport,
+    },
+  })),
+
+  clearReasoningNodes: (agentId) => set((state) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { [agentId]: _removed, ...rest } = state.reasoningNodes;
+    return { reasoningNodes: rest };
+  }),
 }));
 
 // Event subscription setup (called from main.tsx)
@@ -232,6 +278,11 @@ export async function setupAgentEventListeners(): Promise<() => void> {
       input: event.payload.input,
       riskLevel: event.payload.riskLevel,
     });
+  }));
+
+  // Subscribe to reasoning:node_created
+  unlisteners.push(await listen<ReasoningNodeEvent>('reasoning:node_created', (event) => {
+    store.handleReasoningNode(event.payload.agentId, event.payload.node);
   }));
 
   return () => {
