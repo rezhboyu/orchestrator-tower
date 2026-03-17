@@ -22,6 +22,11 @@ interface UseReasoningTreeReturn {
 const NODE_WIDTH = 200;
 const NODE_HEIGHT = 80;
 
+// Stable empty array references to prevent infinite re-renders
+const EMPTY_REASONING_NODES: ReasoningNode[] = [];
+const EMPTY_FLOW_NODES: Node[] = [];
+const EMPTY_FLOW_EDGES: Edge[] = [];
+
 /**
  * Applies dagre layout to position nodes in a top-to-bottom DAG
  */
@@ -102,17 +107,20 @@ function transformToFlowElements(
  * Hook to get React Flow nodes/edges for a specific agent's reasoning tree
  */
 export function useReasoningTree(agentId: string | null): UseReasoningTreeReturn {
-  // Use precise selector to avoid unnecessary re-renders
+  // Use precise selector with stable empty array to avoid infinite re-renders
   const reasoningNodes = useAgentStore(
     useCallback(
-      (state) => (agentId ? state.reasoningNodes[agentId] ?? [] : []),
+      (state) =>
+        agentId
+          ? state.reasoningNodes[agentId] ?? EMPTY_REASONING_NODES
+          : EMPTY_REASONING_NODES,
       [agentId]
     )
   );
 
   const { nodes, edges } = useMemo(() => {
     if (!reasoningNodes || reasoningNodes.length === 0) {
-      return { nodes: [], edges: [] };
+      return { nodes: EMPTY_FLOW_NODES, edges: EMPTY_FLOW_EDGES };
     }
     return transformToFlowElements(reasoningNodes);
   }, [reasoningNodes]);
