@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect, useState } from 'react';
+import { useCallback, useRef, useEffect, useState, useMemo } from 'react';
 import {
   ReactFlow,
   Background,
@@ -14,6 +14,7 @@ import { useAgentStore } from '../../store/agentStore';
 import { useReasoningTree, type ReasoningNodeData } from './useReasoningTree';
 import { ReasoningNode } from './ReasoningNode';
 import { GitSnapshotPanel } from './GitSnapshotPanel';
+import type { AgentViewport } from '../../types/events';
 
 // Register custom node types
 const nodeTypes = {
@@ -39,8 +40,14 @@ const getMinimapNodeColor = (node: Node): string => {
 function ReasoningTreeInner() {
   const { t } = useTranslation();
   const activeAgentId = useAgentStore((state) => state.activeAgentId);
-  const setAgentViewport = useAgentStore((state) => state.setAgentViewport);
-  const agentViewports = useAgentStore((state) => state.agentViewports);
+
+  // Use stable selector - only select the viewport for active agent
+  const savedViewportSelector = useCallback(
+    (state: { agentViewports: Record<string, AgentViewport> }) =>
+      activeAgentId ? state.agentViewports[activeAgentId] : undefined,
+    [activeAgentId]
+  );
+  const savedViewport = useAgentStore(savedViewportSelector);
 
   const { nodes, edges, isEmpty } = useReasoningTree(activeAgentId);
   const { setViewport, getViewport, fitView } = useReactFlow();
@@ -51,23 +58,30 @@ function ReasoningTreeInner() {
   // Track previous agent for viewport persistence
   const prevAgentIdRef = useRef<string | null>(null);
 
+  // Memoize savedViewport to prevent unnecessary effect triggers
+  // Intentionally using individual fields to avoid re-triggering on reference changes
+  const memoizedViewport = useMemo(
+    () => savedViewport,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [savedViewport?.x, savedViewport?.y, savedViewport?.zoom]
+  );
+
   // Save viewport when agent changes
   useEffect(() => {
     const prevAgentId = prevAgentIdRef.current;
 
-    // Save current viewport before switching
+    // Save current viewport before switching (access setAgentViewport via getState to avoid deps)
     if (prevAgentId && prevAgentId !== activeAgentId) {
       const currentViewport = getViewport();
-      setAgentViewport(prevAgentId, currentViewport);
+      useAgentStore.getState().setAgentViewport(prevAgentId, currentViewport);
     }
 
     // Restore viewport for new agent or fit view
     if (activeAgentId) {
-      const savedViewport = agentViewports[activeAgentId];
-      if (savedViewport) {
+      if (memoizedViewport) {
         // Small delay to ensure nodes are rendered
         setTimeout(() => {
-          setViewport(savedViewport, { duration: 200 });
+          setViewport(memoizedViewport, { duration: 200 });
         }, 50);
       } else if (nodes.length > 0) {
         // Fit view for first time
@@ -80,7 +94,7 @@ function ReasoningTreeInner() {
     // Clear selection on agent change
     setSelectedNodeId(null);
     prevAgentIdRef.current = activeAgentId;
-  }, [activeAgentId, agentViewports, getViewport, setAgentViewport, setViewport, fitView, nodes.length]);
+  }, [activeAgentId, memoizedViewport, getViewport, setViewport, fitView, nodes.length]);
 
   // Handle node click - must use useCallback for performance
   const onNodeClick = useCallback(
