@@ -1,5 +1,11 @@
 import { useMemo } from 'react';
-import { Mosaic, MosaicWindow } from 'react-mosaic-component';
+import {
+  Mosaic,
+  MosaicWindow,
+  MosaicWindowContext,
+  ExpandButton,
+  RemoveButton,
+} from 'react-mosaic-component';
 import type { MosaicNode } from 'react-mosaic-component';
 import { useUiStore, DEFAULT_MOSAIC_LAYOUT } from '../../store/uiStore';
 import { AgentPanel } from '../AgentPanel';
@@ -15,6 +21,18 @@ const TITLE_MAP: Record<string, string> = {
   'agent-panels': 'Agent Panels',
   'reasoning-tree': 'Reasoning Tree',
 };
+
+// Custom toolbar without Split button (we have fixed panels, splitting causes duplicate ID errors)
+const CustomToolbar: React.FC = () => (
+  <MosaicWindowContext.Consumer>
+    {() => (
+      <div className="mosaic-default-toolbar">
+        <ExpandButton />
+        <RemoveButton />
+      </div>
+    )}
+  </MosaicWindowContext.Consumer>
+);
 
 export const MosaicArea: React.FC = () => {
   const { layout, setLayout, showReasoningTree } = useUiStore();
@@ -42,7 +60,7 @@ export const MosaicArea: React.FC = () => {
           <MosaicWindow<string>
             path={path}
             title={TITLE_MAP[id] || id}
-            createNode={() => 'agent-panels'}
+            toolbarControls={<CustomToolbar />}
           >
             {TILE_MAP[id] || <div>Unknown tile: {id}</div>}
           </MosaicWindow>
