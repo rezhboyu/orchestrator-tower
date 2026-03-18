@@ -51,6 +51,33 @@ export const DEFAULT_MOSAIC_LAYOUT: MosaicNode<string> = {
   splitPercentage: 70,
 };
 
+// Valid tile IDs for this application
+const VALID_TILE_IDS = new Set(['agent-panels', 'reasoning-tree']);
+
+/**
+ * Validates a Mosaic layout to ensure no duplicate or invalid IDs
+ */
+function validateMosaicLayout(layout: MosaicNode<string> | null): boolean {
+  if (!layout) return true;
+
+  const seenIds = new Set<string>();
+
+  function traverse(node: MosaicNode<string>): boolean {
+    if (typeof node === 'string') {
+      // Check for valid ID
+      if (!VALID_TILE_IDS.has(node)) return false;
+      // Check for duplicate
+      if (seenIds.has(node)) return false;
+      seenIds.add(node);
+      return true;
+    }
+    // Branch node
+    return traverse(node.first) && traverse(node.second);
+  }
+
+  return traverse(layout);
+}
+
 interface UiStoreState {
   // Layout
   layout: MosaicNode<string> | null;
@@ -100,6 +127,15 @@ export const useUiStore = create<UiStoreState>()(
         sidebarCollapsed: state.sidebarCollapsed,
         language: state.language,
       }),
+      // Validate persisted layout on load - reset to default if invalid
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<UiStoreState> | undefined;
+        if (persisted?.layout && !validateMosaicLayout(persisted.layout)) {
+          console.warn('Invalid persisted layout detected, resetting to default');
+          return { ...currentState, ...persisted, layout: DEFAULT_MOSAIC_LAYOUT };
+        }
+        return { ...currentState, ...persisted };
+      },
     }
   )
 );
