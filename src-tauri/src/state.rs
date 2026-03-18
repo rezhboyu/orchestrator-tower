@@ -25,6 +25,13 @@ pub struct AgentState {
     pub model: String,
     pub tower_port: u16,
     pub priority: u32,
+    // Task 15: 崩潰恢復
+    /// Worker 子程序 PID（用於孤兒清除）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worker_pid: Option<u32>,
+    /// 任務 ID（用於 TaskState JSON）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
 }
 
 impl AgentState {
@@ -46,6 +53,9 @@ impl AgentState {
             model,
             tower_port,
             priority: 0,
+            // Task 15: 崩潰恢復
+            worker_pid: None,
+            task_id: None,
         }
     }
 }

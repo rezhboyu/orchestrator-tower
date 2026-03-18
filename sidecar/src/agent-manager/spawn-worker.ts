@@ -8,6 +8,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { isWindows } from '../ipc/platform.js';
 import type { AgentConfig, SpawnWorkerOptions } from './types.js';
+// Task 15: 崩潰恢復
+import { buildResumeArgs } from '../recovery/index.js';
 
 // =============================================================================
 // Worker Fixed Arguments
@@ -56,6 +58,8 @@ export function spawnWorker(
     '--model', config.model,
     '--max-turns', String(config.maxTurns),
     '--tools', 'Read,Write,Edit,Bash,Glob,Grep',
+    // Task 15: 崩潰恢復 --resume 參數注入
+    ...buildResumeArgs(config.sessionId ?? null),
   ];
 
   // 添加 prompt（如果有）
@@ -160,6 +164,8 @@ export function buildWorkerArgs(config: AgentConfig): string[] {
     '--model', config.model,
     '--max-turns', String(config.maxTurns),
     '--tools', 'Read,Write,Edit,Bash,Glob,Grep',
+    // Task 15: 崩潰恢復 --resume 參數注入
+    ...buildResumeArgs(config.sessionId ?? null),
   ];
 
   if (config.prompt) {

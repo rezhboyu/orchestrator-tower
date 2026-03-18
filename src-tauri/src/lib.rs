@@ -2,6 +2,7 @@ mod commands;
 pub mod db;
 pub mod git;
 mod ipc;
+pub mod recovery;
 mod state;
 
 use state::AppState;
