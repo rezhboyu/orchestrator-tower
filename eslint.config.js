@@ -26,6 +26,8 @@ export default [
         clearTimeout: 'readonly',
         React: 'readonly',
         KeyboardEvent: 'readonly',
+        HTMLDivElement: 'readonly',
+        Element: 'readonly',
       },
     },
     plugins: {

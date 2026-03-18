@@ -66,6 +66,33 @@ export interface HitlRequestEvent {
   source: 'tower-mcp' | 'acp-permission';
 }
 
+// Reasoning Tree Node types
+export type NodeType = 'thought' | 'tool_call' | 'tool_result' | 'decision' | 'error';
+export type NodeStatus = 'pending' | 'active' | 'completed' | 'failed' | 'frozen';
+
+export interface ReasoningNode {
+  id: string;
+  agentId: string;
+  parentId: string | null;
+  nodeType: NodeType;
+  content: string; // JSON string
+  status: NodeStatus;
+  gitSnapshotSha: string | null;
+}
+
+export interface ReasoningNodeEvent {
+  type: 'reasoning:node_created';
+  agentId: string;
+  node: ReasoningNode;
+}
+
+// Agent Viewport for ReasoningTree
+export interface AgentViewport {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
 export type TauriAgentEvent =
   | AgentSessionStartEvent
   | AgentTextEvent
@@ -74,4 +101,5 @@ export type TauriAgentEvent =
   | AgentSessionEndEvent
   | AgentStreamDeltaEvent
   | AgentCrashEvent
-  | HitlRequestEvent;
+  | HitlRequestEvent
+  | ReasoningNodeEvent;

@@ -24,7 +24,23 @@
     "deny": "拒絕",
     "riskLevel": "風險等級",
     "toolName": "工具名稱",
-    "input": "輸入內容"
+    "input": "輸入內容",
+    "cancel": "取消",
+    "confirmDeny": "確認拒絕",
+    "denyReasonPlaceholder": "請輸入拒絕原因..."
+  },
+  "agentPanel": {
+    "noAgent": "無可用代理",
+    "noMessages": "尚無訊息",
+    "toolUse": "工具呼叫",
+    "toolResult": "工具結果",
+    "error": "錯誤"
+  },
+  "reasoningTree": {
+    "noNodes": "尚無推理節點",
+    "gitSnapshot": "Git 快照",
+    "rollback": "回滾至此狀態",
+    "rollingBack": "回滾中..."
   },
   "notifications": {
     "layoutReset": "佈局已重置"
