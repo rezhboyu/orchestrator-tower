@@ -268,8 +268,8 @@ npm run tauri dev   # 確認無 panic，console 無 error
 | 09 | HITL 風險分類引擎 | ✅ 完成 |
 | 10 | 配額管理（Bottleneck） | ✅ 完成 |
 | 11 | React UI 骨架 | ✅ 完成 |
-| 12 | AgentPanel 元件 | ⬜ 未開始 |
-| 13 | ReasoningTree（React Flow） | ⬜ 未開始 |
+| 12 | AgentPanel 元件 | ✅ 完成 |
+| 13 | ReasoningTree（React Flow） | ✅ 完成 |
 | 14 | SQLite 持久層 | ✅ 完成 |
 | 15 | 崩潰恢復與 Session 恢復 | ⬜ 未開始 |
 | 16 | 專案與 Agent 生命週期管理 | ⬜ 未開始 |

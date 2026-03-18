@@ -32,25 +32,29 @@ vi.mock('node:fs', async () => {
 });
 
 // Mock child_process
-vi.mock('node:child_process', () => ({
-  exec: vi.fn((_cmd: string, _opts: unknown, cb?: (err: Error | null, result: { stdout: string }) => void) => {
-    if (cb) {
-      cb(null, { stdout: '' });
-    }
-    return { stdout: '' };
-  }),
-  spawn: vi.fn(() => {
-    const proc = new EventEmitter() as unknown as import('node:child_process').ChildProcess;
-    proc.stdin = new EventEmitter() as unknown as import('node:stream').Writable;
-    (proc.stdin as unknown as { write: (data: string) => void }).write = vi.fn();
-    proc.stdout = new EventEmitter() as unknown as import('node:stream').Readable;
-    proc.stderr = new EventEmitter() as unknown as import('node:stream').Readable;
-    proc.kill = vi.fn();
-    // pid is readonly, so we cast to bypass
-    Object.defineProperty(proc, 'pid', { value: 12345, writable: false });
-    return proc;
-  }),
-}));
+vi.mock('node:child_process', async () => {
+  const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+  return {
+    ...actual,
+    exec: vi.fn((_cmd: string, _opts: unknown, cb?: (err: Error | null, result: { stdout: string }) => void) => {
+      if (cb) {
+        cb(null, { stdout: '' });
+      }
+      return { stdout: '' };
+    }),
+    spawn: vi.fn(() => {
+      const proc = new EventEmitter() as unknown as import('node:child_process').ChildProcess;
+      proc.stdin = new EventEmitter() as unknown as import('node:stream').Writable;
+      (proc.stdin as unknown as { write: (data: string) => void }).write = vi.fn();
+      proc.stdout = new EventEmitter() as unknown as import('node:stream').Readable;
+      proc.stderr = new EventEmitter() as unknown as import('node:stream').Readable;
+      proc.kill = vi.fn();
+      // pid is readonly, so we cast to bypass
+      Object.defineProperty(proc, 'pid', { value: 12345, writable: false });
+      return proc;
+    }),
+  };
+});
 
 // =============================================================================
 // Import after mocks
