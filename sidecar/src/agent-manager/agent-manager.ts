@@ -491,7 +491,11 @@ export class AgentManager extends EventEmitter<AgentManagerEvents> {
       };
     } else if (event.kind === 'tool_result') {
       // Task 15: 工具完成後可能有新的 node
-      // 這裡假設 toolId 對應一個 nodeId（實際整合時需要調整）
+      // TODO(Task 17): nodeId 應從 Rust 層的 ReasoningTree/SQLite 取得
+      //   - toolId 是 Claude 生成的工具呼叫 ID
+      //   - nodeId 是 reasoning_nodes 表中的節點 ID
+      //   - 需要 Rust 層上報 nodeId 或從 IPC 查詢
+      //   - 目前暫用 toolId 作為 placeholder
       managed.lastNodeId = event.toolId;
       this.updateTaskState(managed, { lastCompletedNodeId: event.toolId });
     }

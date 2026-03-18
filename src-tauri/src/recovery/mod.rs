@@ -114,14 +114,16 @@ async fn handle_sidecar_crash(app_state: &Arc<AppState>) -> Result<(), RecoveryE
     tokio::time::sleep(Duration::from_secs(ORPHAN_CLEANUP_WAIT_SECS)).await;
 
     // Step 3: 重啟 Sidecar
-    // TODO: 實作 Sidecar 重啟邏輯
-    // 這需要 Tauri AppHandle 才能呼叫 app.shell().sidecar()
-    // 目前暫時跳過，待 Task 17 整合時完成
+    // TODO(Task 17): 實作 Sidecar 重啟邏輯
+    //   - 需要在 lib.rs setup() 中傳入 Tauri AppHandle
+    //   - 使用 app.shell().sidecar("binaries/sidecar") 重啟
     eprintln!("[Recovery] Sidecar restart skipped (requires Tauri AppHandle)");
 
     // Step 4 & 5: 讀取 TaskState 並發送 agent:start
-    // 這也需要 IPC handle 才能發送指令
-    // 目前暫時跳過
+    // TODO(Task 17): 實作 agent:start 發送
+    //   - 等待新 Sidecar IPC 連線
+    //   - 讀取 ~/.orchestrator/projects/{id}/tasks/*.json
+    //   - 對每個 TaskState 發送 agent:start（含 sessionId → --resume）
 
     eprintln!("[Recovery] Recovery sequence completed");
     Ok(())

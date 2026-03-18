@@ -23,6 +23,23 @@ commands.rs          # 實作 7 個 Tauri Commands (移除 todo!())
   - deny_hitl        → 呼叫 Sidecar hitl:response (approved=false)
   - git_rollback     → 呼叫 Git 模組執行回滾
   - get_projects     → 讀取 projects.json
+
+lib.rs               # Tauri setup 整合（Task 15 延伸）
+  - 在 setup() 中啟動 IPC Server
+  - 啟動 start_heartbeat_monitor()
+  - 傳入 AppHandle 供 recovery 模組使用
+
+recovery/mod.rs      # 完成 Task 15 待辦（需要 AppHandle）
+  - restart_sidecar() → 使用 app.shell().sidecar("binaries/sidecar")
+  - 等待新 Sidecar IPC 連線
+  - 讀取 TaskState JSON 並發送 agent:start（含 sessionId）
+```
+
+#### Node.js 層 (`sidecar/src/`)
+```
+agent-manager.ts     # 完成 Task 15 待辦
+  - nodeId 映射：從 Rust 層取得正確的 reasoning_nodes ID
+  - 目前使用 toolId 作為 placeholder
 ```
 
 #### React 層 (`src/`)
