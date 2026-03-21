@@ -2,6 +2,7 @@ mod commands;
 pub mod db;
 pub mod git;
 mod ipc;
+pub mod lifecycle;
 mod state;
 
 use state::AppState;
@@ -19,6 +20,10 @@ pub fn run() {
             commands::deny_hitl,
             commands::rollback_to_node,
             commands::create_project,
+            commands::delete_project,
+            commands::list_projects,
+            commands::create_agent,
+            commands::remove_agent,
             commands::get_app_state,
         ])
         .run(tauri::generate_context!())
