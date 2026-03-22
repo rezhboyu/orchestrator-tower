@@ -65,29 +65,32 @@ pub async fn create_project(path: String, name: String) -> Result<String> {
 /// 3. 刪除 ~/.orchestrator/projects/{id}/ 目錄
 /// 4. 原子更新 projects.json
 pub async fn delete_project(project_id: String, state: &AppState) -> Result<()> {
-    // 檢查是否有 running agents
-    let agents = state.agents.read().map_err(|_| {
-        LifecycleError::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "lock poisoned",
-        ))
-    })?;
+    // 檢查是否有 running agents（在 block 內取得並釋放 read lock，確保不跨 await）
+    let project_agents = {
+        let agents = state.agents.read().map_err(|_| {
+            LifecycleError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "lock poisoned",
+            ))
+        })?;
 
-    let project_agents: Vec<String> = agents
-        .iter()
-        .filter(|(_, a)| a.project_id == project_id)
-        .map(|(id, _)| id.clone())
-        .collect();
+        let agent_ids: Vec<String> = agents
+            .iter()
+            .filter(|(_, a)| a.project_id == project_id)
+            .map(|(id, _)| id.clone())
+            .collect();
 
-    // 確認所有 agents 都是 idle
-    for agent_id in &project_agents {
-        if let Some(agent) = agents.get(agent_id) {
-            if agent.status != AgentStatus::Idle {
-                return Err(LifecycleError::AgentsStillRunning);
+        // 確認所有 agents 都是 idle
+        for agent_id in &agent_ids {
+            if let Some(agent) = agents.get(agent_id) {
+                if agent.status != AgentStatus::Idle {
+                    return Err(LifecycleError::AgentsStillRunning);
+                }
             }
         }
-    }
-    drop(agents); // 釋放 read lock
+
+        agent_ids
+    }; // read lock 在此釋放
 
     // 移除每個 agent
     for agent_id in project_agents {

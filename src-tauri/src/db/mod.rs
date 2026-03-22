@@ -65,6 +65,20 @@ impl Database {
         })
     }
 
+    /// 開啟已存在的資料庫（不執行 schema migration）
+    ///
+    /// 適用於 DB 已由 `init` 建立後的後續存取，避免重複跑 create_tables。
+    pub fn open(db_path: &Path) -> Result<Self> {
+        let conn = Connection::open(db_path)?;
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA synchronous=NORMAL;",
+        )?;
+        Ok(Self {
+            conn: Arc::new(Mutex::new(conn)),
+        })
+    }
+
     /// 取得資料庫連線的鎖定
     pub fn lock(&self) -> Result<std::sync::MutexGuard<'_, Connection>> {
         self.conn.lock().map_err(|_| DbError::LockError)
@@ -86,6 +100,14 @@ impl Database {
 pub async fn init_db(db_path: &Path) -> Result<Database> {
     let path = db_path.to_path_buf();
     tokio::task::spawn_blocking(move || Database::init(&path))
+        .await
+        .map_err(|_| DbError::LockError)?
+}
+
+/// 異步開啟已存在的資料庫（不執行 schema migration）
+pub async fn open_db(db_path: &Path) -> Result<Database> {
+    let path = db_path.to_path_buf();
+    tokio::task::spawn_blocking(move || Database::open(&path))
         .await
         .map_err(|_| DbError::LockError)?
 }

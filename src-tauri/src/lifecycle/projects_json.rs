@@ -54,84 +54,98 @@ pub fn project_data_dir(project_id: &str) -> PathBuf {
     orchestrator_dir().join("projects").join(project_id)
 }
 
-/// 讀取 projects.json
-///
-/// 若檔案不存在，回傳空的 ProjectsFile。
-/// 使用 shared lock 確保讀取一致性。
-pub fn read_projects() -> Result<ProjectsFile> {
-    let path = projects_json_path();
-
-    if !path.exists() {
-        return Ok(ProjectsFile::default());
-    }
-
-    let file = fs::File::open(&path)?;
-    file.lock_shared()?;
-    let result = serde_json::from_reader(&file)?;
-    file.unlock()?;
-
-    Ok(result)
+/// 取得 lock 檔路徑（獨立於 projects.json，避免 rename 導致 inode 變更使 lock 失效）
+fn lock_file_path() -> PathBuf {
+    orchestrator_dir().join("projects.json.lock")
 }
 
-/// 原子寫入 projects.json
+/// 取得 exclusive lock（用於所有讀寫操作）
 ///
-/// 流程：
-/// 1. 對 projects.json 加 exclusive lock
-/// 2. 寫入 .tmp 檔
-/// 3. rename .tmp → projects.json（同一檔案系統上為原子操作）
-/// 4. 解鎖
-pub fn write_projects(data: &ProjectsFile) -> Result<()> {
+/// 回傳 lock file handle，呼叫端在操作完成後 drop 即自動解鎖。
+fn acquire_lock() -> std::result::Result<fs::File, std::io::Error> {
     let dir = orchestrator_dir();
     fs::create_dir_all(&dir)?;
 
-    let path = projects_json_path();
-    let tmp_path = dir.join("projects.json.tmp");
-
-    // 建立或開啟 projects.json 以取得 lock
-    let lock_file = fs::OpenOptions::new()
+    let lock = fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(false)
-        .open(&path)?;
-    lock_file.lock_exclusive()?;
+        .open(lock_file_path())?;
+    lock.lock_exclusive()?;
+    Ok(lock)
+}
 
-    // 寫入 temp file
+/// 在已持有 lock 的情況下讀取 projects.json
+fn read_projects_locked() -> Result<ProjectsFile> {
+    let path = projects_json_path();
+    if !path.exists() {
+        return Ok(ProjectsFile::default());
+    }
+    let content = fs::read_to_string(&path)?;
+    if content.is_empty() {
+        return Ok(ProjectsFile::default());
+    }
+    Ok(serde_json::from_str(&content)?)
+}
+
+/// 在已持有 lock 的情況下原子寫入 projects.json
+fn write_projects_locked(data: &ProjectsFile) -> Result<()> {
+    let dir = orchestrator_dir();
+    let path = projects_json_path();
+    let tmp_path = dir.join("projects.json.tmp");
+
     let json = serde_json::to_string_pretty(data)?;
     let mut tmp = fs::File::create(&tmp_path)?;
     tmp.write_all(json.as_bytes())?;
     tmp.sync_all()?;
 
-    // 原子 rename
+    // 原子 rename（同一檔案系統）
     fs::rename(&tmp_path, &path)?;
-
-    lock_file.unlock()?;
-
     Ok(())
 }
 
-/// 新增專案條目
-pub fn add_project(entry: ProjectEntry) -> Result<()> {
-    let mut data = read_projects()?;
-    data.projects.push(entry);
-    write_projects(&data)
+/// 讀取 projects.json
+///
+/// 若檔案不存在，回傳空的 ProjectsFile。
+/// 使用獨立 .lock 檔確保與寫入互斥。
+pub fn read_projects() -> Result<ProjectsFile> {
+    let _lock = acquire_lock()?;
+    read_projects_locked()
 }
 
-/// 移除專案條目
+/// 原子寫入 projects.json
+pub fn write_projects(data: &ProjectsFile) -> Result<()> {
+    let _lock = acquire_lock()?;
+    write_projects_locked(data)
+}
+
+/// 新增專案條目（在 exclusive lock 內完成 read-modify-write）
+pub fn add_project(entry: ProjectEntry) -> Result<()> {
+    let _lock = acquire_lock()?;
+    let mut data = read_projects_locked()?;
+    data.projects.push(entry);
+    write_projects_locked(&data)
+}
+
+/// 移除專案條目（在 exclusive lock 內完成 read-modify-write）
 pub fn remove_project(project_id: &str) -> Result<()> {
-    let mut data = read_projects()?;
+    let _lock = acquire_lock()?;
+    let mut data = read_projects_locked()?;
     data.projects.retain(|p| p.id != project_id);
-    write_projects(&data)
+    write_projects_locked(&data)
 }
 
 /// 根據 ID 查找專案
 pub fn find_project(project_id: &str) -> Result<Option<ProjectEntry>> {
-    let data = read_projects()?;
+    let _lock = acquire_lock()?;
+    let data = read_projects_locked()?;
     Ok(data.projects.into_iter().find(|p| p.id == project_id))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::env;
     use tempfile::tempdir;
 
@@ -141,6 +155,7 @@ mod tests {
     }
 
     impl HomeGuard {
+        #[allow(deprecated)] // env::set_var is unsafe in multi-threaded, hence #[serial]
         fn set(dir: &std::path::Path) -> Self {
             let original = env::var("HOME").ok();
             env::set_var("HOME", dir);
@@ -149,6 +164,7 @@ mod tests {
     }
 
     impl Drop for HomeGuard {
+        #[allow(deprecated)]
         fn drop(&mut self) {
             match &self.original {
                 Some(v) => env::set_var("HOME", v),
@@ -158,6 +174,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn read_returns_default_when_no_file() {
         let dir = tempdir().unwrap();
         let _guard = HomeGuard::set(dir.path());
@@ -168,6 +185,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn create_project_writes_projects_json() {
         let dir = tempdir().unwrap();
         let _guard = HomeGuard::set(dir.path());
@@ -188,6 +206,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn remove_project_updates_json() {
         let dir = tempdir().unwrap();
         let _guard = HomeGuard::set(dir.path());
@@ -217,6 +236,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn concurrent_project_writes_no_corruption() {
         let dir = tempdir().unwrap();
         let _guard = HomeGuard::set(dir.path());
@@ -248,6 +268,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn find_project_returns_match() {
         let dir = tempdir().unwrap();
         let _guard = HomeGuard::set(dir.path());

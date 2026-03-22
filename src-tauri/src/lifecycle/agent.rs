@@ -3,14 +3,14 @@
 //! create_agent: 建立 worktree → 插入 AppState → 寫入 DB → 送 IPC agent:start
 //! remove_agent: 確認 idle → 移除 AppState → 軟刪除 DB → 移除 worktree
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use chrono::Utc;
 use uuid::Uuid;
 
 use super::projects_json;
 use super::{LifecycleError, Result};
-use crate::db;
+use crate::db::open_db;
 use crate::git::worktree;
 use crate::state::{AgentState, AgentStatus, AppState};
 
@@ -68,10 +68,10 @@ pub async fn create_agent(
         agents.insert(agent_id.clone(), agent_state);
     }
 
-    // 寫入 agent.db
+    // 寫入 agent.db（DB 已在 create_project 時 init，這裡只開啟）
     let data_dir = projects_json::project_data_dir(&project_id);
     let db_path = data_dir.join("agent.db");
-    let database = db::init_db(&db_path).await.map_err(LifecycleError::Db)?;
+    let database = open_db(&db_path).await.map_err(LifecycleError::Db)?;
 
     let aid = agent_id.clone();
     let pid = project_id.clone();
@@ -108,7 +108,7 @@ pub async fn create_agent(
 /// 4. 移除 Git worktree
 pub async fn remove_agent(agent_id: String, state: &AppState) -> Result<()> {
     // 取得 agent info 並驗證狀態
-    let (project_id, project_path) = {
+    let project_id = {
         let agents = state.agents.read().map_err(|_| {
             LifecycleError::Io(std::io::Error::new(
                 std::io::ErrorKind::Other,
@@ -124,22 +124,21 @@ pub async fn remove_agent(agent_id: String, state: &AppState) -> Result<()> {
             return Err(LifecycleError::AgentStillRunning);
         }
 
-        let pid = agent.project_id.clone();
-        // 從 projects.json 取得專案路徑以找到 worktree root
-        (pid, None::<PathBuf>)
+        agent.project_id.clone()
     };
 
     // 取得專案路徑
-    let project = {
+    let project_path = {
         let pid = project_id.clone();
-        tokio::task::spawn_blocking(move || projects_json::find_project(&pid))
+        let project = tokio::task::spawn_blocking(move || projects_json::find_project(&pid))
             .await
-            .map_err(|e| LifecycleError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))??
+            .map_err(|e| LifecycleError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))??;
+        PathBuf::from(
+            project
+                .ok_or_else(|| LifecycleError::ProjectNotFound(project_id.clone()))?
+                .path,
+        )
     };
-    let project_path = project
-        .map(|p| PathBuf::from(p.path))
-        .or(project_path)
-        .ok_or_else(|| LifecycleError::ProjectNotFound(project_id.clone()))?;
 
     // 從 AppState 移除
     {
@@ -156,7 +155,7 @@ pub async fn remove_agent(agent_id: String, state: &AppState) -> Result<()> {
     let data_dir = projects_json::project_data_dir(&project_id);
     let db_path = data_dir.join("agent.db");
     if db_path.exists() {
-        let database = db::init_db(&db_path).await.map_err(LifecycleError::Db)?;
+        let database = open_db(&db_path).await.map_err(LifecycleError::Db)?;
         let aid = agent_id.clone();
         let now = Utc::now().timestamp();
 
@@ -196,7 +195,7 @@ pub async fn list_active_agents(project_id: &str) -> Result<Vec<crate::db::model
         return Ok(Vec::new());
     }
 
-    let database = db::init_db(&db_path).await.map_err(LifecycleError::Db)?;
+    let database = open_db(&db_path).await.map_err(LifecycleError::Db)?;
 
     let records = tokio::task::spawn_blocking(move || {
         let conn = database.lock().map_err(|_| {
@@ -212,8 +211,7 @@ pub async fn list_active_agents(project_id: &str) -> Result<Vec<crate::db::model
             .query_map([], |row| {
                 crate::db::models::AgentRecord::from_row(row)
             })?
-            .filter_map(|r| r.ok())
-            .collect::<Vec<_>>();
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok::<_, crate::db::DbError>(rows)
     })
     .await
