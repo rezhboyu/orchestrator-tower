@@ -1,19 +1,22 @@
 # Orchestrator Tower - Code Quality Review Report
 
-> Date: 2026-03-22
+> Date: 2026-03-23 (Second Pass)
 > Scope: Full codebase review (Tasks 01-14 complete, pre-Task 17/18)
+> Method: Line-by-line review of all React components, stores, types, Rust commands, and tests
 
 ---
 
 ## Executive Summary
 
-The codebase demonstrates **strong architectural design** with clear separation across 4 layers (React/Rust/Node.js/CLI). All 14 completed tasks are structurally sound. However, this review identified **17 issues** across security, correctness, performance, and test coverage that should be addressed before proceeding with integration (Task 17).
+The codebase demonstrates **strong architectural design** with clear separation across 4 layers (React/Rust/Node.js/CLI). All 14 completed tasks are structurally sound. This second-pass review identified **22 issues** (5 new from deeper inspection) across security, correctness, performance, and test coverage that should be addressed before proceeding with integration (Task 17).
 
 **Key Blockers:**
 1. Build fails — TypeScript compilation errors due to missing `node_modules`
 2. HITL commands are `todo!()` stubs — approval/denial silently discarded
 3. React mutates state directly — violates "React read-only" architecture rule
 4. Stale closure in event listeners — events update old store instance
+5. **[NEW]** ReasoningTree viewport resets on every new node (not just agent switch)
+6. **[NEW]** Duplicate interface definitions will diverge
 
 ---
 
@@ -225,18 +228,65 @@ const nodeData = data as unknown as ReasoningNodeData; // Unsafe double cast
 
 No runtime validation. If data shape changes, errors are silent.
 
-### 6.4 Navigator Nullability (LOW)
-**Location:** `src/i18n/index.ts:6-12`
-
-```typescript
-const browserLang = navigator.language; // No null check
-```
-
-While unlikely in Tauri, defensive coding should use `navigator?.language ?? 'en'`.
+### ~~6.4 Navigator Nullability~~ (RETRACTED)
+**Previous report claimed** `i18n/index.ts` lacked null check. **Correction:** `uiStore.ts:100` already has proper guard: `if (typeof navigator !== 'undefined' && navigator.language?.startsWith('zh'))`. This issue does NOT exist.
 
 ---
 
-## 7. Configuration Issues
+## 7. New Findings (Second Pass)
+
+### 7.1 ReasoningTree Viewport Resets on Every New Node (HIGH)
+**Location:** `src/components/ReasoningTree/index.tsx:97`
+
+```typescript
+useEffect(() => {
+  // ... viewport save/restore logic ...
+}, [activeAgentId, memoizedViewport, getViewport, setViewport, fitView, nodes.length]);
+//                                                                       ^^^^^^^^^^^^
+```
+
+`nodes.length` is in the dependency array. Every time a new reasoning node arrives (which happens continuously during agent execution), this effect re-runs and triggers viewport restoration or `fitView`. The user's manual pan/zoom is constantly overridden while an agent is working.
+
+**Fix:** Remove `nodes.length` from deps. Only trigger viewport logic on `activeAgentId` change. Use a separate effect for initial `fitView` on first nodes.
+
+### 7.2 Duplicate Interface Definitions (MEDIUM)
+**Locations:**
+- `HitlRequest` defined in BOTH `agentStore.ts:18-23` AND `HitlReview.tsx:6-11`
+- `AgentMessage` defined in BOTH `agentStore.ts:25-28` AND `MessageStream.tsx:16-19`
+
+These are identical today but will inevitably diverge as features are added. Should be in `types/events.ts`.
+
+### 7.3 Unbounded Messages Array — Memory Leak (MEDIUM)
+**Location:** `src/store/agentStore.ts:100`
+
+```typescript
+messages: [...agent.messages, { type: 'text', content: text }],
+```
+
+Messages array grows indefinitely with no cap. A long-running agent session producing thousands of tool calls will consume unbounded memory. Need a max message limit (e.g., keep last 1000) or virtualized storage.
+
+### 7.4 Clipboard API Promise Not Handled (LOW)
+**Location:** `src/components/ReasoningTree/GitSnapshotPanel.tsx:76`
+
+```typescript
+navigator.clipboard.writeText(selectedNode.gitSnapshotSha!);
+```
+
+`writeText()` returns a Promise that is neither awaited nor caught. If clipboard access is denied (e.g., iframe, permissions), the error is unhandled.
+
+### 7.5 `agentStore.test.ts` Uses Stale Store Pattern (LOW)
+**Location:** `src/store/agentStore.test.ts:14-15`
+
+```typescript
+const store = useAgentStore.getState();
+store.handleSessionStart('a1', 's1', 'claude-opus-4');
+```
+
+Tests capture `store` once and call methods on it — the exact same stale closure pattern as the production bug in issue 1.2. The tests pass because Zustand's `getState()` returns the actual store object (not a snapshot), but this pattern masks the real bug and makes it look correct.
+
+---
+
+## 8. Configuration Issues
 
 | Item | Status | Action |
 |------|--------|--------|
@@ -248,42 +298,50 @@ While unlikely in Tauri, defensive coding should use `navigator?.language ?? 'en
 
 ---
 
-## 8. Recommendations (Priority Order)
+## 9. Recommendations (Priority Order)
 
 ### P0 — Before Task 17
 1. Install dependencies (`npm install` in root + sidecar)
 2. Fix stale closure in `setupAgentEventListeners` (use `getState()` per event)
 3. Capture event listener cleanup function in `main.tsx`
+4. **[NEW]** Fix ReasoningTree viewport effect — remove `nodes.length` from deps
 
 ### P1 — During Task 17
-4. Implement all 7 Rust commands (remove `todo!()`)
-5. Redesign HITL flow: React should not call `clearHitlRequest` directly; wait for Rust event
-6. Add input validation on deny reason (max 500 chars)
-7. Add try/catch around `JSON.stringify` for tool input display
-8. Surface HITL errors to user via notification store
+5. Implement all 7 Rust commands (remove `todo!()`)
+6. Redesign HITL flow: React should not call `clearHitlRequest` directly; wait for Rust event
+7. Add input validation on deny reason (max 500 chars)
+8. Add try/catch around `JSON.stringify` for tool input display
+9. Surface HITL errors to user via notification store
+10. **[NEW]** Consolidate duplicate `HitlRequest` / `AgentMessage` interfaces into `types/events.ts`
 
 ### P2 — During Task 18
-9. Add `React.memo()` to `AgentTab`, `ToolUseCard`, `ToolResultCard`
-10. Use stable message IDs instead of array indices for React keys
-11. Optimize store selectors (subscribe to active agent only)
-12. Replace `setTimeout(50)` with `requestAnimationFrame` in ReasoningTree
+11. Add `React.memo()` to `AgentTab`, `ToolUseCard`, `ToolResultCard`
+12. Use stable message IDs instead of array indices for React keys
+13. Optimize store selectors (subscribe to active agent only)
+14. Replace `setTimeout(50)` with `requestAnimationFrame` in ReasoningTree
+15. **[NEW]** Add message array cap (e.g., 2000) to prevent memory leak
 
 ### P3 — Before Release
-13. Add tests for GitSnapshotPanel, MosaicArea, Toolbar
-14. Fix ineffective ReasoningTree memo test
-15. Add error boundary components around major panels
-16. Standardize Vitest versions
-17. Remove unused `autoprefixer` dependency
+16. Add tests for GitSnapshotPanel, MosaicArea, Toolbar
+17. Fix ineffective ReasoningTree memo test
+18. Add error boundary components around major panels
+19. Standardize Vitest versions
+20. Remove unused `autoprefixer` dependency
+21. **[NEW]** Handle clipboard API promise rejection in GitSnapshotPanel
 
 ---
 
-## 9. Summary Severity Matrix
+## 10. Summary Severity Matrix
 
 | Severity | Count | Categories |
 |----------|-------|------------|
 | CRITICAL | 3 | HITL bypass, stale closure, build failure |
-| HIGH | 5 | Input validation, error swallowing, architecture violations, JSON crash |
-| MEDIUM | 6 | Performance, race conditions, hardcoded ports, test gaps |
-| LOW | 3 | Cleanup, type safety, navigator null check |
+| HIGH | 6 | Input validation, error swallowing, architecture violations, JSON crash, **viewport reset bug** |
+| MEDIUM | 7 | Performance, race conditions, hardcoded ports, test gaps, **duplicate interfaces, unbounded messages** |
+| LOW | 4 | Cleanup, type safety, clipboard, test pattern |
 
-**Overall Assessment:** Architecture is solid. Implementation quality is good for the development stage. The critical items (HITL stubs, stale closures) are expected given Tasks 15-17 haven't started yet. Addressing the P0/P1 items during Task 17 will bring the codebase to production-ready quality.
+### Corrections from First Pass
+- ~~Navigator nullability~~ — **RETRACTED**. `uiStore.ts:100` already has proper `typeof navigator !== 'undefined'` guard.
+- `agentStore.ts:handleCrash()` — First pass listed this as "sets status without Rust event". **Clarification:** This is actually correct behavior since `handleCrash` is called FROM a Tauri event listener, meaning it IS responding to a Rust event. The architecture violation only applies to `clearHitlRequest()`.
+
+**Overall Assessment:** Architecture is solid. Implementation quality is good for the development stage. The critical items (HITL stubs, stale closures) are expected given Tasks 15-17 haven't started yet. The viewport reset bug (7.1) is a usability-breaking issue that should be fixed immediately. Addressing the P0/P1 items during Task 17 will bring the codebase to production-ready quality.
