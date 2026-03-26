@@ -271,8 +271,8 @@ npm run tauri dev   # 確認無 panic，console 無 error
 | 12 | AgentPanel 元件 | ✅ 完成 |
 | 13 | ReasoningTree（React Flow） | ✅ 完成 |
 | 14 | SQLite 持久層 | ✅ 完成 |
-| 15 | 崩潰恢復與 Session 恢復 | ⬜ 未開始 |
-| 16 | 專案與 Agent 生命週期管理 | ⬜ 未開始 |
+| 15 | 崩潰恢復與 Session 恢復 | ✅ 完成 |
+| 16 | 專案與 Agent 生命週期管理 | ✅ 完成 |
 | 17 | 前後端串接整合 | ⬜ 未開始 |
 | 18 | UI 美化與動效 | ⬜ 未開始 |
 
