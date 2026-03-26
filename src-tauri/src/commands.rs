@@ -1,3 +1,4 @@
+use crate::lifecycle;
 use crate::state::AppState;
 use tauri::State;
 
@@ -78,12 +79,52 @@ pub async fn create_project(
     name: String,
     _state: State<'_, AppState>,
 ) -> Result<String, String> {
-    // TODO: Implement project creation
-    // 1. Initialize git repository if not exists
-    // 2. Create project entry in projects.json
-    // 3. Return project ID
-    let _ = (path, name);
-    todo!("create_project not implemented")
+    lifecycle::project::create_project(path, name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Delete a project by ID
+#[tauri::command]
+pub async fn delete_project(
+    project_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    lifecycle::project::delete_project(project_id, &state)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// List all projects
+#[tauri::command]
+pub async fn list_projects() -> Result<Vec<lifecycle::projects_json::ProjectEntry>, String> {
+    lifecycle::project::list_projects()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Create a new agent for a project
+#[tauri::command]
+pub async fn create_agent(
+    project_id: String,
+    model: String,
+    priority: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    lifecycle::agent::create_agent(project_id, model, priority.unwrap_or(0), &state)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Remove an agent
+#[tauri::command]
+pub async fn remove_agent(
+    agent_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    lifecycle::agent::remove_agent(agent_id, &state)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Get the current application state
