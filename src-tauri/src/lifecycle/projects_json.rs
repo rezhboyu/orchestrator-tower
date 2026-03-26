@@ -114,6 +114,11 @@ pub fn write_projects_in(base: &Path, projects: &[Project]) -> Result<(), Lifecy
 // Tests
 // =============================================================================
 
+// TODO: [TEST ENV] cargo test lifecycle:: 需要 libgtk-3-dev + libwebkit2gtk-4.1-dev。
+// 在未安裝 Tauri 系統依賴的 CI 環境中，測試無法編譯（build script 強制 link GTK）。
+// 本地開發環境安裝依賴後可執行：
+//   sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+//   cargo test --manifest-path src-tauri/Cargo.toml lifecycle::
 #[cfg(test)]
 mod tests {
     use super::*;

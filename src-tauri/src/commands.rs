@@ -1,98 +1,195 @@
-use crate::state::AppState;
+use crate::db::DatabaseRegistry;
+use crate::ipc::IpcState;
+use crate::lifecycle::agent::{create_agent as lc_create_agent, remove_agent as lc_remove_agent};
+use crate::lifecycle::project::{
+    create_project as lc_create_project, delete_project as lc_delete_project,
+};
+use crate::lifecycle::projects_json::{read_projects, Project};
+use crate::state::{AgentStatus, AppState};
 use tauri::State;
 
-/// Start an agent with the given ID
-#[tauri::command]
-pub async fn start_agent(
-    agent_id: String,
-    _state: State<'_, AppState>,
-) -> Result<(), String> {
-    // TODO: Implement agent start logic
-    // 1. Create worktree for the agent
-    // 2. Send agent:start command to sidecar via IPC
-    // 3. Update agent status in AppState
-    let _ = agent_id;
-    todo!("start_agent not implemented")
-}
+// =============================================================================
+// 專案生命週期指令
+// =============================================================================
 
-/// Stop an agent with the given ID
-#[tauri::command]
-pub async fn stop_agent(
-    agent_id: String,
-    _state: State<'_, AppState>,
-) -> Result<(), String> {
-    // TODO: Implement agent stop logic
-    // 1. Send agent:stop command to sidecar via IPC
-    // 2. Update agent status in AppState
-    // 3. Clean up worktree if needed
-    let _ = agent_id;
-    todo!("stop_agent not implemented")
-}
-
-/// Approve a HITL (Human-in-the-Loop) request
-#[tauri::command]
-pub async fn approve_hitl(
-    request_id: String,
-    _state: State<'_, AppState>,
-) -> Result<(), String> {
-    // TODO: Implement HITL approval logic
-    // 1. Send hitl:response with behavior='allow' to sidecar
-    // 2. Update any waiting agents
-    let _ = request_id;
-    todo!("approve_hitl not implemented")
-}
-
-/// Deny a HITL (Human-in-the-Loop) request with a reason
-#[tauri::command]
-pub async fn deny_hitl(
-    request_id: String,
-    reason: String,
-    _state: State<'_, AppState>,
-) -> Result<(), String> {
-    // TODO: Implement HITL denial logic
-    // 1. Send hitl:response with behavior='deny' to sidecar
-    // 2. Update any waiting agents
-    let _ = (request_id, reason);
-    todo!("deny_hitl not implemented")
-}
-
-/// Rollback an agent to a specific reasoning tree node
-#[tauri::command]
-pub async fn rollback_to_node(
-    agent_id: String,
-    node_id: String,
-    _state: State<'_, AppState>,
-) -> Result<(), String> {
-    // TODO: Implement rollback logic using Git plumbing
-    // 1. Find the commit associated with node_id
-    // 2. Use git reset --keep to rollback
-    // 3. Update agent state
-    let _ = (agent_id, node_id);
-    todo!("rollback_to_node not implemented")
-}
-
-/// Create a new project at the given path
+/// 建立新專案
+///
+/// 驗證 Git repo、建目錄、初始化 agent.db，並將 DB 登記至 DatabaseRegistry。
 #[tauri::command]
 pub async fn create_project(
     path: String,
     name: String,
-    _state: State<'_, AppState>,
+    db_registry: State<'_, DatabaseRegistry>,
 ) -> Result<String, String> {
-    // TODO: Implement project creation
-    // 1. Initialize git repository if not exists
-    // 2. Create project entry in projects.json
-    // 3. Return project ID
-    let _ = (path, name);
-    todo!("create_project not implemented")
+    let (project_id, db) = lc_create_project(&path, &name)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    db_registry
+        .0
+        .lock()
+        .map_err(|_| "db_registry lock poisoned".to_string())?
+        .insert(project_id.clone(), db);
+
+    Ok(project_id)
 }
 
-/// Get the current application state
+/// 刪除專案
+///
+/// 有 running agent 時拒絕刪除（agents_still_running）。
+/// 刪除前先移除所有 idle agents，再清除目錄及 projects.json 記錄。
+#[tauri::command]
+pub async fn delete_project(
+    project_id: String,
+    state: State<'_, AppState>,
+    ipc_state: State<'_, IpcState>,
+    db_registry: State<'_, DatabaseRegistry>,
+) -> Result<(), String> {
+    // 分類該專案的 agents：running vs idle
+    let (running_ids, idle_ids): (Vec<String>, Vec<String>) = {
+        let agents = state
+            .agents
+            .read()
+            .map_err(|_| "agents lock poisoned".to_string())?;
+        let mut running = vec![];
+        let mut idle = vec![];
+        for a in agents.values().filter(|a| a.project_id == project_id) {
+            if matches!(a.status, AgentStatus::Idle) {
+                idle.push(a.id.clone());
+            } else {
+                running.push(a.id.clone());
+            }
+        }
+        (running, idle)
+    };
+
+    // 有 running agent → 拒絕
+    lc_delete_project(&project_id, &running_ids)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 移除 idle agents（best effort）
+    let db_opt = db_registry
+        .0
+        .lock()
+        .map_err(|_| "db_registry lock poisoned".to_string())?
+        .get(&project_id)
+        .cloned();
+
+    if let Some(db) = db_opt {
+        let ipc_opt = ipc_state
+            .0
+            .lock()
+            .map_err(|_| "ipc_state lock poisoned".to_string())?
+            .clone();
+        for agent_id in &idle_ids {
+            let _ = lc_remove_agent(agent_id, &state, &db, ipc_opt.as_ref()).await;
+        }
+    }
+
+    // 從 DatabaseRegistry 移除
+    db_registry
+        .0
+        .lock()
+        .map_err(|_| "db_registry lock poisoned".to_string())?
+        .remove(&project_id);
+
+    Ok(())
+}
+
+/// 列出所有專案
+#[tauri::command]
+pub async fn list_projects() -> Result<Vec<Project>, String> {
+    read_projects().map_err(|e| e.to_string())
+}
+
+// =============================================================================
+// Agent 生命週期指令
+// =============================================================================
+
+/// 建立新 Agent
+///
+/// 建立 git worktree、寫入 AppState、初始化 DB 記錄，並透過 IPC 送 agent:start。
+#[tauri::command]
+pub async fn create_agent(
+    project_id: String,
+    prompt: String,
+    model: String,
+    max_turns: u32,
+    state: State<'_, AppState>,
+    ipc_state: State<'_, IpcState>,
+    db_registry: State<'_, DatabaseRegistry>,
+) -> Result<String, String> {
+    let db = db_registry
+        .0
+        .lock()
+        .map_err(|_| "db_registry lock poisoned".to_string())?
+        .get(&project_id)
+        .cloned()
+        .ok_or_else(|| format!("No database registered for project {}", project_id))?;
+
+    let ipc_opt = ipc_state
+        .0
+        .lock()
+        .map_err(|_| "ipc_state lock poisoned".to_string())?
+        .clone();
+
+    lc_create_agent(&project_id, &prompt, &model, max_turns, &state, &db, ipc_opt.as_ref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 移除 Agent
+///
+/// 確認 Idle → 送 agent:stop → 等待 agent:stopped ACK（5s）→
+/// 移除 AppState → 移除 worktree → DB 軟刪除。
+#[tauri::command]
+pub async fn remove_agent(
+    agent_id: String,
+    state: State<'_, AppState>,
+    ipc_state: State<'_, IpcState>,
+    db_registry: State<'_, DatabaseRegistry>,
+) -> Result<(), String> {
+    // 取得 project_id 以找到對應 DB
+    let project_id = {
+        let agents = state
+            .agents
+            .read()
+            .map_err(|_| "agents lock poisoned".to_string())?;
+        agents
+            .get(&agent_id)
+            .map(|a| a.project_id.clone())
+            .ok_or_else(|| format!("Agent {} not found", agent_id))?
+    };
+
+    let db = db_registry
+        .0
+        .lock()
+        .map_err(|_| "db_registry lock poisoned".to_string())?
+        .get(&project_id)
+        .cloned()
+        .ok_or_else(|| format!("No database registered for project {}", project_id))?;
+
+    let ipc_opt = ipc_state
+        .0
+        .lock()
+        .map_err(|_| "ipc_state lock poisoned".to_string())?
+        .clone();
+
+    lc_remove_agent(&agent_id, &state, &db, ipc_opt.as_ref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// =============================================================================
+// 既有指令（Task 02 骨架，待後續 Task 實作）
+// =============================================================================
+
+/// 取得目前應用程式狀態（快照）
 #[tauri::command]
 pub async fn get_app_state(
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    // TODO: Implement full state retrieval
-    // For now, return basic state info
     let agents = state.agents.read().map_err(|e| e.to_string())?;
     let quota = state.quota.read().map_err(|e| e.to_string())?;
 
@@ -106,4 +203,56 @@ pub async fn get_app_state(
             "tier3_available": quota.tier3_available,
         }
     }))
+}
+
+/// 啟動 Agent（Task 05 完整實作的入口，目前由 create_agent 取代）
+#[tauri::command]
+pub async fn start_agent(
+    agent_id: String,
+    _state: State<'_, AppState>,
+) -> Result<(), String> {
+    let _ = agent_id;
+    Err("Use create_agent instead".to_string())
+}
+
+/// 停止 Agent（Task 05 完整實作的入口，目前由 remove_agent 取代）
+#[tauri::command]
+pub async fn stop_agent(
+    agent_id: String,
+    _state: State<'_, AppState>,
+) -> Result<(), String> {
+    let _ = agent_id;
+    Err("Use remove_agent instead".to_string())
+}
+
+/// 核准 HITL 請求
+#[tauri::command]
+pub async fn approve_hitl(
+    request_id: String,
+    _state: State<'_, AppState>,
+) -> Result<(), String> {
+    let _ = request_id;
+    todo!("approve_hitl: Task 06/07 整合後實作")
+}
+
+/// 拒絕 HITL 請求
+#[tauri::command]
+pub async fn deny_hitl(
+    request_id: String,
+    reason: String,
+    _state: State<'_, AppState>,
+) -> Result<(), String> {
+    let _ = (request_id, reason);
+    todo!("deny_hitl: Task 06/07 整合後實作")
+}
+
+/// 回滾至 ReasoningTree 節點
+#[tauri::command]
+pub async fn rollback_to_node(
+    agent_id: String,
+    node_id: String,
+    _state: State<'_, AppState>,
+) -> Result<(), String> {
+    let _ = (agent_id, node_id);
+    todo!("rollback_to_node: Task 08 整合後實作")
 }

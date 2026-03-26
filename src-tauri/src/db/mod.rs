@@ -80,6 +80,17 @@ impl Database {
     }
 }
 
+/// DatabaseRegistry - 儲存 project_id → Database 的 Tauri managed state
+///
+/// 避免每次 Tauri command 重複開啟 SQLite 連線。
+pub struct DatabaseRegistry(pub std::sync::Mutex<std::collections::HashMap<String, Database>>);
+
+impl Default for DatabaseRegistry {
+    fn default() -> Self {
+        Self(std::sync::Mutex::new(std::collections::HashMap::new()))
+    }
+}
+
 /// 異步初始化資料庫
 ///
 /// 使用 `spawn_blocking` 包裝同步操作以保持 async 接口。

@@ -117,6 +117,7 @@ pub async fn delete_project_in(
 // Tests
 // =============================================================================
 
+// TODO: [TEST ENV] 同 projects_json.rs，需要 libgtk-3-dev 才能執行。
 #[cfg(test)]
 mod tests {
     use super::*;
