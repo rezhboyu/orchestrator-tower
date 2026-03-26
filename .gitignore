@@ -36,3 +36,7 @@ coverage/
 # Tauri
 src-tauri/WixTools/
 src-tauri/icons/
+
+# Claude Code local settings and installed skills
+.claude/settings.local.json
+.claude/skills/
