@@ -101,6 +101,13 @@ pub enum SidecarEvent {
         last_tool_use: Option<Value>,
     },
 
+    /// Agent 主動停止確認（回應 agent:stop 指令）
+    #[serde(rename = "agent:stopped")]
+    AgentStopped {
+        #[serde(rename = "agentId")]
+        agent_id: String,
+    },
+
     #[serde(rename = "hitl:request")]
     HitlRequest {
         #[serde(rename = "agentId")]

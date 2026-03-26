@@ -479,13 +479,14 @@ export class AgentManager extends EventEmitter<AgentManagerEvents> {
     // 清理 parser
     managed.parser.end();
 
-    if (managed.resultReceived) {
-      // 正常完成：收到 result 後程序退出
+    if (managed.resultReceived || managed.state === 'stopping') {
+      // 正常完成：收到 result 後程序退出，或主動送出 agent:stop 後退出
       managed.state = 'stopped';
-      console.log(`[AgentManager] Agent ${agentId} normal exit`);
+      console.log(`[AgentManager] Agent ${agentId} stopped (resultReceived=${managed.resultReceived})`);
+      this.ipc.send({ type: 'agent:stopped', agentId });
       this.emit('agentStopped', agentId);
     } else {
-      // 意外退出：未收到 result 就退出
+      // 意外退出：未收到 result 且非主動停止
       managed.state = 'crashed';
       console.error(`[AgentManager] Agent ${agentId} crash detected: code=${code}, signal=${signal}`);
 
