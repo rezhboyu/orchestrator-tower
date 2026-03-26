@@ -1,18 +1,11 @@
 /**
- * TaskState - 任務狀態持久化
+ * Task State - 任務狀態 JSON 讀寫
  *
- * 負責將任務狀態寫入 JSON 檔案，用於崩潰後恢復。
- *
+ * 用於崩潰恢復時持久化任務狀態。
  * 路徑：~/.orchestrator/projects/{projectId}/tasks/{taskId}.json
- *
- * 效能要求：寫入 < 100ms（使用 atomic write: temp + rename）
- *
- * 架構原則：
- * - Node.js 只負責 JSON 讀寫，不持有業務狀態
- * - 實際的恢復邏輯由 Rust 驅動
  */
 
-import * as fs from 'node:fs';
+import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
@@ -21,21 +14,15 @@ import * as os from 'node:os';
 // =============================================================================
 
 export interface TaskState {
-  /** Task 唯一識別碼 */
+  version: 1;
   taskId: string;
-  /** Agent 識別碼 */
   agentId: string;
-  /** 專案識別碼 */
   projectId: string;
-  /** 原始任務提示 */
   prompt: string;
-  /** 最後完成的推理節點 ID */
   lastCompletedNodeId: string | null;
-  /** 最後的 Git 快照 SHA */
   lastGitSha: string | null;
-  /** 任務開始時間（Unix ms） */
+  lastSessionId: string | null;
   startedAt: number;
-  /** 最後更新時間（Unix ms） */
   updatedAt: number;
 }
 
@@ -44,65 +31,69 @@ export interface TaskState {
 // =============================================================================
 
 /**
- * 取得 orchestrator 根目錄
- *
- * 預設：~/.orchestrator/
- * 可透過 ORCHESTRATOR_HOME 環境變數覆蓋
+ * 取得 ~/.orchestrator 目錄路徑
  */
-export function getOrchestratorHome(): string {
-  return process.env.ORCHESTRATOR_HOME ?? path.join(os.homedir(), '.orchestrator');
+export function getOrchestratorDir(): string {
+  return path.join(os.homedir(), '.orchestrator');
+}
+
+/**
+ * 取得專案 tasks 目錄路徑
+ * @param projectId 專案 ID
+ */
+export function getTasksDir(projectId: string): string {
+  return path.join(getOrchestratorDir(), 'projects', projectId, 'tasks');
 }
 
 /**
  * 取得 TaskState JSON 檔案路徑
- *
- * @returns ~/.orchestrator/projects/{projectId}/tasks/{taskId}.json
+ * @param projectId 專案 ID
+ * @param taskId 任務 ID
  */
 export function getTaskStatePath(projectId: string, taskId: string): string {
-  return path.join(
-    getOrchestratorHome(),
-    'projects',
-    projectId,
-    'tasks',
-    `${taskId}.json`
-  );
+  return path.join(getTasksDir(projectId), `${taskId}.json`);
 }
 
 // =============================================================================
-// Read/Write Operations
+// CRUD Operations
 // =============================================================================
 
 /**
- * 寫入 TaskState（原子寫入）
+ * 寫入 TaskState JSON
  *
- * 使用 temp file + rename 確保原子性：
- * 1. 寫入 {path}.tmp.{random}
- * 2. rename 到目標路徑
+ * 使用 write + rename 確保原子性寫入。
+ * 完成條件：< 100ms
  *
- * 效能目標：< 100ms
+ * @param state TaskState 物件
  */
 export async function writeTaskState(state: TaskState): Promise<void> {
   const filePath = getTaskStatePath(state.projectId, state.taskId);
-
-  // 確保父目錄存在
   const dir = path.dirname(filePath);
-  await fs.promises.mkdir(dir, { recursive: true });
+  const tmpPath = `${filePath}.tmp`;
 
-  // 更新時間戳
-  state.updatedAt = Date.now();
+  // 確保目錄存在
+  await fs.mkdir(dir, { recursive: true });
 
-  // Atomic write: temp file + rename
-  const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}`;
-  const content = JSON.stringify(state, null, 2);
+  // 更新 updatedAt
+  const stateWithTimestamp: TaskState = {
+    ...state,
+    updatedAt: Date.now(),
+  };
 
-  await fs.promises.writeFile(tmpPath, content, 'utf-8');
-  await fs.promises.rename(tmpPath, filePath);
+  // 寫入臨時檔案
+  const json = JSON.stringify(stateWithTimestamp, null, 2);
+  await fs.writeFile(tmpPath, json, 'utf8');
+
+  // 原子性 rename
+  await fs.rename(tmpPath, filePath);
 }
 
 /**
- * 讀取 TaskState
+ * 讀取 TaskState JSON
  *
- * @returns TaskState 或 null（檔案不存在時）
+ * @param projectId 專案 ID
+ * @param taskId 任務 ID
+ * @returns TaskState 物件，若不存在則回傳 null
  */
 export async function readTaskState(
   projectId: string,
@@ -111,10 +102,18 @@ export async function readTaskState(
   const filePath = getTaskStatePath(projectId, taskId);
 
   try {
-    const content = await fs.promises.readFile(filePath, 'utf-8');
-    return JSON.parse(content) as TaskState;
-  } catch (err: unknown) {
-    if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+    const json = await fs.readFile(filePath, 'utf8');
+    const state = JSON.parse(json) as TaskState;
+
+    // 版本檢查
+    if (state.version !== 1) {
+      console.warn(`[TaskState] Unknown version: ${state.version}, file: ${filePath}`);
+      return null;
+    }
+
+    return state;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       return null;
     }
     throw err;
@@ -122,28 +121,56 @@ export async function readTaskState(
 }
 
 /**
- * 列出專案下所有 TaskState
+ * 刪除 TaskState JSON
+ *
+ * @param projectId 專案 ID
+ * @param taskId 任務 ID
  */
-export async function listTaskStates(projectId: string): Promise<TaskState[]> {
-  const tasksDir = path.join(getOrchestratorHome(), 'projects', projectId, 'tasks');
+export async function deleteTaskState(
+  projectId: string,
+  taskId: string
+): Promise<void> {
+  const filePath = getTaskStatePath(projectId, taskId);
 
   try {
-    const files = await fs.promises.readdir(tasksDir);
+    await fs.unlink(filePath);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw err;
+    }
+    // 檔案不存在，視為成功
+  }
+}
+
+/**
+ * 列出專案所有 TaskState
+ *
+ * @param projectId 專案 ID
+ * @returns TaskState 陣列，按 updatedAt 降序排列
+ */
+export async function listTaskStates(projectId: string): Promise<TaskState[]> {
+  const dir = getTasksDir(projectId);
+
+  try {
+    const files = await fs.readdir(dir);
+    const jsonFiles = files.filter((f) => f.endsWith('.json'));
+
     const states: TaskState[] = [];
 
-    for (const file of files) {
-      if (!file.endsWith('.json')) continue;
-      try {
-        const content = await fs.promises.readFile(path.join(tasksDir, file), 'utf-8');
-        states.push(JSON.parse(content) as TaskState);
-      } catch {
-        // 跳過無法解析的檔案
+    for (const file of jsonFiles) {
+      const taskId = file.replace('.json', '');
+      const state = await readTaskState(projectId, taskId);
+      if (state) {
+        states.push(state);
       }
     }
 
+    // 按 updatedAt 降序排列（最近更新的優先恢復）
+    states.sort((a, b) => b.updatedAt - a.updatedAt);
+
     return states;
-  } catch (err: unknown) {
-    if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       return [];
     }
     throw err;
@@ -151,21 +178,27 @@ export async function listTaskStates(projectId: string): Promise<TaskState[]> {
 }
 
 /**
- * 刪除 TaskState
+ * 建立新的 TaskState
+ *
+ * @param params 初始化參數
  */
-export async function deleteTaskState(
-  projectId: string,
-  taskId: string
-): Promise<boolean> {
-  const filePath = getTaskStatePath(projectId, taskId);
-
-  try {
-    await fs.promises.unlink(filePath);
-    return true;
-  } catch (err: unknown) {
-    if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return false;
-    }
-    throw err;
-  }
+export function createTaskState(params: {
+  taskId: string;
+  agentId: string;
+  projectId: string;
+  prompt: string;
+}): TaskState {
+  const now = Date.now();
+  return {
+    version: 1,
+    taskId: params.taskId,
+    agentId: params.agentId,
+    projectId: params.projectId,
+    prompt: params.prompt,
+    lastCompletedNodeId: null,
+    lastGitSha: null,
+    lastSessionId: null,
+    startedAt: now,
+    updatedAt: now,
+  };
 }

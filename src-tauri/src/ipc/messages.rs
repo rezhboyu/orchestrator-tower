@@ -148,6 +148,13 @@ pub enum RustCommand {
         tower_port: u16,
         #[serde(rename = "worktreePath")]
         worktree_path: String,
+        // Task 15: 崩潰恢復
+        #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+        #[serde(rename = "taskId", skip_serializing_if = "Option::is_none")]
+        task_id: Option<String>,
+        #[serde(rename = "projectId", skip_serializing_if = "Option::is_none")]
+        project_id: Option<String>,
     },
 
     #[serde(rename = "agent:stop")]
@@ -310,11 +317,35 @@ mod tests {
             max_turns: 10,
             tower_port: 3701,
             worktree_path: "/tmp/worktree".to_string(),
+            // Task 15: 崩潰恢復
+            session_id: None,
+            task_id: None,
+            project_id: None,
         };
 
         let json = serde_json::to_string(&cmd).unwrap();
         assert!(json.contains(r#""type":"agent:start""#));
         assert!(json.contains(r#""agentId":"a1""#));
+    }
+
+    #[test]
+    fn rust_command_with_recovery_fields() {
+        let cmd = RustCommand::AgentStart {
+            agent_id: "a1".to_string(),
+            prompt: "Resume task".to_string(),
+            model: "claude-opus-4".to_string(),
+            max_turns: 10,
+            tower_port: 3701,
+            worktree_path: "/tmp/worktree".to_string(),
+            session_id: Some("session-123".to_string()),
+            task_id: Some("task-456".to_string()),
+            project_id: Some("project-789".to_string()),
+        };
+
+        let json = serde_json::to_string(&cmd).unwrap();
+        assert!(json.contains(r#""sessionId":"session-123""#));
+        assert!(json.contains(r#""taskId":"task-456""#));
+        assert!(json.contains(r#""projectId":"project-789""#));
     }
 
     #[test]

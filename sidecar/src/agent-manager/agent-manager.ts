@@ -39,6 +39,12 @@ import type {
   ManagedAgent,
   CrashInfo,
 } from './types.js';
+// Task 15: 崩潰恢復
+import {
+  writeTaskState,
+  createTaskState,
+  type TaskState,
+} from '../recovery/index.js';
 
 // =============================================================================
 // Events
@@ -128,6 +134,10 @@ export class AgentManager extends EventEmitter<AgentManagerEvents> {
           maxTurns: cmd.maxTurns,
           towerPort: cmd.towerPort,
           prompt: cmd.prompt,
+          // Task 15: 崩潰恢復
+          sessionId: cmd.sessionId,
+          taskId: cmd.taskId,
+          projectId: cmd.projectId,
         });
         break;
 
@@ -236,11 +246,29 @@ export class AgentManager extends EventEmitter<AgentManagerEvents> {
       parser,
       exitedFlag,
       resultReceived: false,
-      lastSessionId: null,
+      lastSessionId: config.sessionId ?? null, // Task 15: 從 config 繼承（用於恢復）
       lastToolUse: null,
       state: 'running',
+      // Task 15: 崩潰恢復
+      lastGitSha: null,
+      lastNodeId: null,
+      startedAt: Date.now(),
     };
     this.agents.set(config.agentId, managed);
+
+    // Task 15: 初始化 TaskState（若有 taskId 和 projectId）
+    if (config.taskId && config.projectId) {
+      const taskState = createTaskState({
+        taskId: config.taskId,
+        agentId: config.agentId,
+        projectId: config.projectId,
+        prompt: config.prompt ?? '',
+      });
+      taskState.lastSessionId = config.sessionId ?? null;
+      writeTaskState(taskState).catch(err => {
+        console.error(`[AgentManager] Failed to write initial TaskState: ${err}`);
+      });
+    }
 
     // 接管 stdout
     proc.stdout?.on('data', (chunk: Buffer) => {
@@ -453,12 +481,23 @@ export class AgentManager extends EventEmitter<AgentManagerEvents> {
     // 追蹤最後的 session_id 和 tool_use
     if (event.kind === 'session_start') {
       managed.lastSessionId = event.sessionId;
+      // Task 15: 更新 TaskState
+      this.updateTaskState(managed, { lastSessionId: event.sessionId });
     } else if (event.kind === 'tool_call') {
       managed.lastToolUse = {
         toolName: event.toolName,
         toolId: event.toolId,
         input: event.input,
       };
+    } else if (event.kind === 'tool_result') {
+      // Task 15: 工具完成後可能有新的 node
+      // TODO(Task 17): nodeId 應從 Rust 層的 ReasoningTree/SQLite 取得
+      //   - toolId 是 Claude 生成的工具呼叫 ID
+      //   - nodeId 是 reasoning_nodes 表中的節點 ID
+      //   - 需要 Rust 層上報 nodeId 或從 IPC 查詢
+      //   - 目前暫用 toolId 作為 placeholder
+      managed.lastNodeId = event.toolId;
+      this.updateTaskState(managed, { lastCompletedNodeId: event.toolId });
     }
 
     // 轉換並上報
@@ -466,6 +505,43 @@ export class AgentManager extends EventEmitter<AgentManagerEvents> {
     if (sidecarEvent) {
       this.ipc.send(sidecarEvent);
     }
+  }
+
+  // Task 15: 更新 TaskState（非阻塞）
+  private updateTaskState(
+    managed: ManagedAgent,
+    updates: Partial<Pick<TaskState, 'lastSessionId' | 'lastCompletedNodeId' | 'lastGitSha'>>
+  ): void {
+    const { config } = managed;
+    if (!config.taskId || !config.projectId) {
+      return; // 沒有 taskId/projectId 不寫入
+    }
+
+    // 更新 managed 狀態
+    if (updates.lastGitSha !== undefined) {
+      managed.lastGitSha = updates.lastGitSha;
+    }
+    if (updates.lastCompletedNodeId !== undefined) {
+      managed.lastNodeId = updates.lastCompletedNodeId;
+    }
+
+    // 非阻塞寫入
+    const taskState: TaskState = {
+      version: 1,
+      taskId: config.taskId,
+      agentId: config.agentId,
+      projectId: config.projectId,
+      prompt: config.prompt ?? '',
+      lastCompletedNodeId: managed.lastNodeId,
+      lastGitSha: managed.lastGitSha,
+      lastSessionId: managed.lastSessionId,
+      startedAt: managed.startedAt,
+      updatedAt: Date.now(),
+    };
+
+    writeTaskState(taskState).catch(err => {
+      console.error(`[AgentManager] Failed to update TaskState: ${err}`);
+    });
   }
 
   private handleProcessExit(

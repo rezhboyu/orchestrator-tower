@@ -24,6 +24,10 @@ export interface AgentConfig {
   maxTurns: number;
   towerPort: number;
   prompt?: string;
+  // Task 15: 崩潰恢復
+  taskId?: string;      // Rust 層生成的任務 ID
+  projectId?: string;   // 專案 ID
+  sessionId?: string;   // 用於 --resume 恢復的 session ID
 }
 
 // =============================================================================
@@ -39,6 +43,10 @@ export interface ManagedAgent {
   lastSessionId: string | null;
   lastToolUse: unknown | null;
   state: AgentState;
+  // Task 15: 崩潰恢復
+  lastGitSha: string | null;    // 最後 Git 快照 SHA
+  lastNodeId: string | null;    // 最後完成的 reasoning node ID
+  startedAt: number;            // 任務開始時間
 }
 
 // =============================================================================

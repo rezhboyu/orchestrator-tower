@@ -107,3 +107,16 @@ export function getResumeSessionId(args: string[]): string | null {
   }
   return args[index + 1];
 }
+
+/**
+ * 建構 --resume 參數陣列（spawn-worker 使用）
+ *
+ * @param sessionId 上次 session ID，若為 null 則回傳空陣列
+ * @returns 參數陣列，例如 ['--resume', 'session-123']
+ */
+export function buildResumeArgs(sessionId: string | null): string[] {
+  if (!sessionId || sessionId.trim() === '') {
+    return [];
+  }
+  return ['--resume', sessionId];
+}

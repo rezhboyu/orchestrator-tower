@@ -101,6 +101,10 @@ export interface AgentStart {
   maxTurns: number;
   towerPort: number;
   worktreePath: string;
+  // Task 15: 崩潰恢復
+  sessionId?: string;   // 用於 --resume 恢復的 session ID
+  taskId?: string;      // 任務 ID（Rust 層生成）
+  projectId?: string;   // 專案 ID
 }
 
 export interface AgentStop {
