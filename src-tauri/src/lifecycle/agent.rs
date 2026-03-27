@@ -170,13 +170,15 @@ pub async fn remove_agent(
 
     // 2. 送 agent:stop 並等待 agent:stopped ACK
     if let Some(handle) = ipc_handle {
+        // 先訂閱，再送指令，避免 agent:stopped 在 subscribe 前就廣播而漏接
+        let mut rx = handle.subscribe();
+
         let cmd = RustCommand::AgentStop {
             agent_id: agent_id.to_string(),
         };
         let _ = handle.send_command(cmd).await;
 
         // 等待 agent:stopped 事件（5s timeout）
-        let mut rx = handle.subscribe();
         let _ = tokio::time::timeout(STOP_ACK_TIMEOUT, async {
             loop {
                 match rx.recv().await {
