@@ -1,7 +1,7 @@
 //! 專案與 Agent 生命週期管理（Task 16）
 //!
 //! 模組結構：
-//! - `projects_json`：projects.json atomic read/write（fs2 lock + rename）
+//! - `projects_json`：projects.json atomic read/write（fd-lock + rename）
 //! - `project`：create_project / delete_project
 //! - `agent`：create_agent / remove_agent
 

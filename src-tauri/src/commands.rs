@@ -6,6 +6,7 @@ use crate::lifecycle::project::{
 };
 use crate::lifecycle::projects_json::{read_projects, Project};
 use crate::state::{AgentStatus, AppState};
+use std::sync::Arc;
 use tauri::State;
 
 // =============================================================================
@@ -37,11 +38,11 @@ pub async fn create_project(
 /// 刪除專案
 ///
 /// 有 running agent 時拒絕刪除（agents_still_running）。
-/// 刪除前先移除所有 idle agents，再清除目錄及 projects.json 記錄。
+/// 先移除所有 idle agents，再清除目錄及 projects.json 記錄。
 #[tauri::command]
 pub async fn delete_project(
     project_id: String,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
     ipc_state: State<'_, IpcState>,
     db_registry: State<'_, DatabaseRegistry>,
 ) -> Result<(), String> {
@@ -63,12 +64,15 @@ pub async fn delete_project(
         (running, idle)
     };
 
-    // 有 running agent → 拒絕
-    lc_delete_project(&project_id, &running_ids)
-        .await
-        .map_err(|e| e.to_string())?;
+    // 有 running agent → 拒絕（不進行任何刪除）
+    if !running_ids.is_empty() {
+        return Err(format!(
+            "agents_still_running: project {} has running agents",
+            project_id
+        ));
+    }
 
-    // 移除 idle agents（best effort）
+    // 先移除 idle agents（確保 agents 清除後再刪專案目錄）
     let db_opt = db_registry
         .0
         .lock()
@@ -83,9 +87,14 @@ pub async fn delete_project(
             .map_err(|_| "ipc_state lock poisoned".to_string())?
             .clone();
         for agent_id in &idle_ids {
-            let _ = lc_remove_agent(agent_id, &state, &db, ipc_opt.as_ref()).await;
+            let _ = lc_remove_agent(agent_id, &**state, &db, ipc_opt.as_ref()).await;
         }
     }
+
+    // 再刪除專案目錄及 projects.json 記錄
+    lc_delete_project(&project_id, &running_ids)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // 從 DatabaseRegistry 移除
     db_registry
@@ -116,7 +125,7 @@ pub async fn create_agent(
     prompt: String,
     model: String,
     max_turns: u32,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
     ipc_state: State<'_, IpcState>,
     db_registry: State<'_, DatabaseRegistry>,
 ) -> Result<String, String> {
@@ -134,7 +143,7 @@ pub async fn create_agent(
         .map_err(|_| "ipc_state lock poisoned".to_string())?
         .clone();
 
-    lc_create_agent(&project_id, &prompt, &model, max_turns, &state, &db, ipc_opt.as_ref())
+    lc_create_agent(&project_id, &prompt, &model, max_turns, &**state, &db, ipc_opt.as_ref())
         .await
         .map_err(|e| e.to_string())
 }
@@ -146,7 +155,7 @@ pub async fn create_agent(
 #[tauri::command]
 pub async fn remove_agent(
     agent_id: String,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
     ipc_state: State<'_, IpcState>,
     db_registry: State<'_, DatabaseRegistry>,
 ) -> Result<(), String> {
@@ -176,7 +185,7 @@ pub async fn remove_agent(
         .map_err(|_| "ipc_state lock poisoned".to_string())?
         .clone();
 
-    lc_remove_agent(&agent_id, &state, &db, ipc_opt.as_ref())
+    lc_remove_agent(&agent_id, &**state, &db, ipc_opt.as_ref())
         .await
         .map_err(|e| e.to_string())
 }
@@ -188,7 +197,7 @@ pub async fn remove_agent(
 /// 取得目前應用程式狀態（快照）
 #[tauri::command]
 pub async fn get_app_state(
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<serde_json::Value, String> {
     let agents = state.agents.read().map_err(|e| e.to_string())?;
     let quota = state.quota.read().map_err(|e| e.to_string())?;
@@ -209,27 +218,27 @@ pub async fn get_app_state(
 #[tauri::command]
 pub async fn start_agent(
     agent_id: String,
-    _state: State<'_, AppState>,
+    _state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let _ = agent_id;
-    Err("Use create_agent instead".to_string())
+    Err("start_agent is deprecated; use the create_agent Tauri command instead".to_string())
 }
 
 /// 停止 Agent（Task 05 完整實作的入口，目前由 remove_agent 取代）
 #[tauri::command]
 pub async fn stop_agent(
     agent_id: String,
-    _state: State<'_, AppState>,
+    _state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let _ = agent_id;
-    Err("Use remove_agent instead".to_string())
+    Err("stop_agent is deprecated; use the remove_agent Tauri command instead".to_string())
 }
 
 /// 核准 HITL 請求
 #[tauri::command]
 pub async fn approve_hitl(
     request_id: String,
-    _state: State<'_, AppState>,
+    _state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let _ = request_id;
     todo!("approve_hitl: Task 06/07 整合後實作")
@@ -240,7 +249,7 @@ pub async fn approve_hitl(
 pub async fn deny_hitl(
     request_id: String,
     reason: String,
-    _state: State<'_, AppState>,
+    _state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let _ = (request_id, reason);
     todo!("deny_hitl: Task 06/07 整合後實作")
@@ -251,7 +260,7 @@ pub async fn deny_hitl(
 pub async fn rollback_to_node(
     agent_id: String,
     node_id: String,
-    _state: State<'_, AppState>,
+    _state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let _ = (agent_id, node_id);
     todo!("rollback_to_node: Task 08 整合後實作")

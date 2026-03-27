@@ -3,15 +3,14 @@
 //! 路徑：`~/.orchestrator/projects.json`
 //!
 //! 寫入策略：
-//! 1. 取得 ~/.orchestrator/projects.json.lock 的 exclusive file lock（fs2）
+//! 1. 取得 ~/.orchestrator/projects.json.lock 的 exclusive file lock（fd-lock）
 //! 2. 寫入 ~/.orchestrator/projects.json.tmp
 //! 3. std::fs::rename（同一 filesystem，atomic）
-//! 4. lock 在 lock_file drop 時自動釋放
+//! 4. lock 在 guard drop 時自動釋放
 //!
 //! 提供 `_in(base)` 版本供測試時指定自訂目錄，避免汙染真實 ~/.orchestrator。
 
 use crate::lifecycle::LifecycleError;
-use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -88,12 +87,13 @@ pub fn write_projects_in(base: &Path, projects: &[Project]) -> Result<(), Lifecy
     let tmp_path = base.join("projects.json.tmp");
     let lock_path = base.join("projects.json.lock");
 
-    // 取得 exclusive lock
+    // 取得 exclusive lock（fd-lock）
     let lock_file = fs::OpenOptions::new()
         .create(true)
         .write(true)
         .open(&lock_path)?;
-    lock_file.lock_exclusive()?;
+    let mut fd_lock = fd_lock::RwLock::new(lock_file);
+    let _guard = fd_lock.write()?;
 
     // 寫入 tmp
     let file = ProjectsFile {
@@ -183,8 +183,9 @@ mod tests {
         }
 
         // 讀回來的 JSON 必須合法（不損壞）
+        // 注意：read 在 lock 外執行，5 個 task 的最後一筆 write 勝出，
+        // 結果可能只有 1 筆。測試目標是「JSON 格式不損壞」，而非「所有寫入都保留」。
         let projects = read_projects_in(&base).unwrap();
-        // 至少有 1 筆（因為 lock 保護，不應全部 0 筆）
         assert!(!projects.is_empty());
         // 所有 id 應該是合法的 p0..p4
         for p in &projects {

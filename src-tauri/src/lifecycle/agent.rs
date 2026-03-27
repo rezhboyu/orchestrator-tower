@@ -5,7 +5,7 @@
 //!                   、移除 AppState、移除 worktree、DB 軟刪除
 
 use crate::db::Database;
-use crate::git::worktree::{create_worktree, remove_worktree, worktree_path};
+use crate::git::worktree::{create_worktree, remove_worktree};
 use crate::ipc::messages::RustCommand;
 use crate::ipc::IpcServerHandle;
 use crate::lifecycle::projects_json::{default_orchestrator_dir, read_projects_in};
@@ -140,8 +140,8 @@ pub async fn remove_agent(
     db: &Database,
     ipc_handle: Option<&IpcServerHandle>,
 ) -> Result<(), LifecycleError> {
-    // 1. 確認 Agent 狀態 + 取得 worktree 資訊
-    let (project_path, agent_worktree) = {
+    // 1. 確認 Agent 狀態 + 取得 project_path
+    let (project_path, _) = {
         let agents = app_state
             .agents
             .read()
@@ -202,7 +202,6 @@ pub async fn remove_agent(
 
     // 4. git worktree remove
     let _ = remove_worktree(&project_path, agent_id).await;
-    drop(agent_worktree); // suppress unused warning
 
     // 5. 軟刪除（deleted_at = now）
     let now = chrono::Utc::now().timestamp();
@@ -228,7 +227,6 @@ mod tests {
     use super::*;
     use crate::db::init_db;
     use crate::state::AppState;
-    use std::collections::HashMap;
     use tempfile::tempdir;
 
     /// 建立已有 agent 在 AppState 且狀態為 Idle 的測試場景
@@ -270,7 +268,6 @@ mod tests {
 
     #[tokio::test]
     async fn remove_agent_soft_deletes_db_record() {
-        let base = tempdir().unwrap();
         let project_root = tempdir().unwrap();
 
         // 建立 .trees/agent-test-1 目錄模擬 worktree
@@ -302,7 +299,6 @@ mod tests {
 
     #[tokio::test]
     async fn remove_agent_rejects_non_idle() {
-        let base = tempdir().unwrap();
         let project_root = tempdir().unwrap();
         let wt_path = project_root.path().join(".trees").join("agent-x");
         tokio::fs::create_dir_all(&wt_path).await.unwrap();
