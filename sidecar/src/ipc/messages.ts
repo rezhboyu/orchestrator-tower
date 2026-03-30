@@ -62,6 +62,11 @@ export interface AgentCrash {
   lastToolUse: unknown | null;
 }
 
+export interface AgentStopped {
+  type: 'agent:stopped';
+  agentId: string;
+}
+
 export interface HitlRequest {
   type: 'hitl:request';
   agentId: string;
@@ -86,6 +91,7 @@ export type SidecarEvent =
   | AgentSessionEnd
   | AgentStreamDelta
   | AgentCrash
+  | AgentStopped
   | HitlRequest
   | Heartbeat;
 
@@ -194,6 +200,7 @@ export function isSidecarEvent(msg: unknown): msg is SidecarEvent {
     'agent:session_end',
     'agent:stream_delta',
     'agent:crash',
+    'agent:stopped',
     'hitl:request',
     'heartbeat',
   ];

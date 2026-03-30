@@ -98,6 +98,17 @@ impl Default for IpcServerState {
     }
 }
 
+/// IpcState - IPC Server Handle 的 Tauri managed state
+///
+/// 在 IPC Server 啟動後寫入；Tauri commands 透過此 state 取得 handle。
+pub struct IpcState(pub std::sync::Mutex<Option<IpcServerHandle>>);
+
+impl Default for IpcState {
+    fn default() -> Self {
+        Self(std::sync::Mutex::new(None))
+    }
+}
+
 /// IPC Server Handle - 用於與 IPC Server 互動
 #[derive(Clone)]
 pub struct IpcServerHandle {
